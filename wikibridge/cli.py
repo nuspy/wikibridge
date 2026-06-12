@@ -49,6 +49,17 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("index", help="ricostruisce indice FTS e index.md")
 
+    sub.add_parser("graph", help="rigenera graph.json e graph.html")
+
+    sub.add_parser("catalog-drain",
+                   help="cataloga i task in _pending/ col brain HTTP")
+
+    p_capply = sub.add_parser("catalog-apply",
+                              help="applica un risultato di catalogazione (uso skill)")
+    p_capply.add_argument("source", help="path wiki, es. sources/x.md")
+    p_capply.add_argument("--json", required=True,
+                          help="JSON {entities, concepts, relations}")
+
     p_imp = sub.add_parser("import", help="importa da una wiki esterna")
     p_imp.add_argument("url")
     p_imp.add_argument("--depth", type=int, default=1)
@@ -126,6 +137,31 @@ def main(argv: list[str] | None = None) -> int:
         n = SearchIndex(proj).rebuild()
         WikiWriter(proj).rebuild_index()
         _print({"project": proj.slug, "pages": n})
+        return 0
+
+    if args.cmd == "graph":
+        from .wiki.graph import build_graph
+        proj = store.get(args.project)
+        _print({"project": proj.slug, **build_graph(proj)})
+        return 0
+
+    if args.cmd == "catalog-drain":
+        from .catalog import drain_pending
+        proj = store.get(args.project)
+        _print(drain_pending(cfg, proj))
+        return 0
+
+    if args.cmd == "catalog-apply":
+        from .catalog import apply_catalog_result
+        proj = store.get(args.project)
+        result = json.loads(args.json)
+        written = apply_catalog_result(proj, args.source, result)
+        # task corrispondente in _pending/: rimosso se presente
+        from pathlib import Path as _P
+        pending = proj.pending_dir / f"{_P(args.source).stem}.json"
+        if pending.is_file():
+            pending.unlink()
+        _print(written)
         return 0
 
     if args.cmd == "import":
