@@ -1,0 +1,9 @@
+requests>=2.31
+beautifulsoup4>=4.12
+markdownify>=0.13
+trafilatura>=1.8
+markitdown>=0.1
+flask>=3.0
+flask-cors>=4.0
+python-slugify>=8.0
+pyyaml>=6.0

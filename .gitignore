@@ -1,0 +1,16 @@
+# Dati runtime (progetti, wiki, indici) e segreti: mai nel repo
+data/
+secrets/
+
+# Ambiente Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
