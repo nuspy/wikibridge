@@ -25,7 +25,7 @@ from typing import Callable
 
 from .adapters import detect_adapter
 from .adapters.base import PageRef
-from .auth import AuthProfileStore
+from .auth import AuthProfileStore, AuthRequiredError
 from .config import Config
 from .http import make_session
 from .limits import ImportLimits
@@ -97,18 +97,27 @@ def run_import(cfg: Config, project: Project, url: str, *,
     writer = WikiWriter(project)
     index = SearchIndex(project)
 
+    auth_store = AuthProfileStore(cfg)
+    if not auth_profile:
+        auth_profile = auth_store.find_for(url)
+        if auth_profile:
+            log.info("profilo auth selezionato automaticamente per %s: %s",
+                     url, auth_profile)
+    else:
+        # ricorda l'associazione host->profilo: i prossimi import di questo
+        # host non avranno bisogno di --auth-profile
+        auth_store.bind_host(auth_profile, url)
     session = make_session(cfg, limits)
-    AuthProfileStore(cfg).apply_profile(session, auth_profile)
-    adapter = detect_adapter(url, session, limits, forced=adapter_name)
 
     rec = resume_record or {
-        "id": imports_log.next_id(), "url": url, "adapter": adapter.name,
+        "id": imports_log.next_id(), "url": url, "adapter": adapter_name,
         "scope": scope, "depth": depth, "limits": limits.to_dict(),
         "auth_profile": auth_profile, "state": "running",
         "truncated": False, "frontier": [], "pages": 0, "skipped": 0,
         "errors": [], "started": _now(), "finished": None, "page_index": {},
     }
     rec["state"] = "running"
+    rec["auth_profile"] = auth_profile
     imports_log.upsert(rec)
 
     def emit(phase: str, detail: str = "") -> None:
@@ -116,11 +125,39 @@ def run_import(cfg: Config, project: Project, url: str, *,
             progress({"phase": phase, "pages": rec["pages"],
                       "max_pages": limits.max_pages, "detail": detail})
 
+    reauths = 0
+
+    def try_reauth(reason: str) -> bool:
+        """Un re-login (interattivo se serve), al massimo due per job."""
+        nonlocal reauths
+        if not auth_profile or reauths >= 2:
+            return False
+        reauths += 1
+        emit("auth", f"re-login ({reason})")
+        try:
+            return auth_store.reauth(session, auth_profile)
+        except Exception as e:  # noqa: BLE001
+            log.warning("re-login del profilo %s fallito: %s", auth_profile, e)
+            return False
+
     deadline = time.monotonic() + limits.max_runtime_min * 60
     total_bytes = 0
     visited: set[str] = set(rec["page_index"].keys())
+    queue: deque[PageRef] = deque()
 
     try:
+        emit("auth" if auth_profile else "resolving", url)
+        # può già rinnovare il token o aprire il browser per il login
+        auth_store.apply_profile(session, auth_profile)
+        session.guard_auth = True
+        try:
+            adapter = detect_adapter(url, session, limits, forced=adapter_name)
+        except AuthRequiredError as e:
+            if not try_reauth(e.reason):
+                raise
+            adapter = detect_adapter(url, session, limits, forced=adapter_name)
+        rec["adapter"] = adapter.name
+
         emit("resolving", url)
         if rec["frontier"]:
             queue = deque(PageRef(id=u, url=u, depth=d)
@@ -157,6 +194,18 @@ def run_import(cfg: Config, project: Project, url: str, *,
             emit("fetching", ref.title or ref.url)
             try:
                 page = adapter.fetch(ref)
+            except AuthRequiredError as e:
+                if not try_reauth(e.reason):
+                    # la pagina torna in frontier: il resume riparte da qui
+                    visited.discard(ref.url)
+                    queue.appendleft(ref)
+                    raise
+                try:
+                    page = adapter.fetch(ref)
+                except Exception as e2:  # noqa: BLE001
+                    rec["errors"].append(f"{ref.url}: {e2}")
+                    rec["skipped"] += 1
+                    continue
             except Exception as e:  # noqa: BLE001 — una pagina rotta non ferma il job
                 rec["errors"].append(f"{ref.url}: {e}")
                 rec["skipped"] += 1
@@ -201,6 +250,16 @@ def run_import(cfg: Config, project: Project, url: str, *,
             rec["frontier"] = [[r.url, r.depth] for r in queue]
         if rec["state"] == "running":
             rec["state"] = "done"
+    except AuthRequiredError as e:
+        rec["state"] = "auth_required"
+        rec["truncated"] = True
+        if queue:
+            rec["frontier"] = [[r.url, r.depth] for r in queue]
+        hint = (f"esegui `wikibridge auth login {auth_profile}`"
+                if auth_profile else
+                "crea il profilo: `wikibridge auth detect <url> --save <nome>`"
+                " poi `wikibridge auth login <nome>`")
+        rec["errors"].append(f"{e} — {hint}")
     except Exception as e:  # noqa: BLE001
         log.exception("import fallito")
         rec["state"] = "error"
@@ -229,7 +288,10 @@ def sync_import(cfg: Config, project: Project, import_id: str, *,
     limits.exclude = rec.get("limits", {}).get("exclude", [])
 
     session = make_session(cfg, limits)
-    AuthProfileStore(cfg).apply_profile(session, rec.get("auth_profile"))
+    auth_store = AuthProfileStore(cfg)
+    auth_profile = rec.get("auth_profile") or auth_store.find_for(rec["url"])
+    auth_store.apply_profile(session, auth_profile)
+    session.guard_auth = True
     adapter = detect_adapter(rec["url"], session, limits,
                              forced=rec.get("adapter", "auto"))
     adapter.resolve(rec["url"], rec.get("scope", "page"))  # imposta lo scope
@@ -237,6 +299,7 @@ def sync_import(cfg: Config, project: Project, import_id: str, *,
     writer = WikiWriter(project)
     index = SearchIndex(project)
     checked = refetched = 0
+    reauthed = False
     for page_url, info in list(rec["page_index"].items()):
         checked += 1
         if progress:
@@ -247,6 +310,12 @@ def sync_import(cfg: Config, project: Project, import_id: str, *,
         if not adapter.changed_since(ref, info.get("revision")):
             continue
         try:
+            page = adapter.fetch(ref)
+        except AuthRequiredError:
+            if reauthed or not auth_profile \
+                    or not auth_store.reauth(session, auth_profile):
+                raise
+            reauthed = True
             page = adapter.fetch(ref)
         except Exception as e:  # noqa: BLE001
             rec["errors"].append(f"sync {page_url}: {e}")
@@ -284,13 +353,16 @@ def refresh_page(cfg: Config, project: Project, wiki_path: str, *,
     limits = ImportLimits.from_config(cfg)
     session = make_session(cfg, limits)
     # ritrova il profilo auth dall'import di origine, se registrato
+    auth_store = AuthProfileStore(cfg)
     auth_profile = None
     if fm.get("import_id"):
         try:
             auth_profile = ImportsLog(project).get(fm["import_id"]).get("auth_profile")
         except KeyError:
             pass
-    AuthProfileStore(cfg).apply_profile(session, auth_profile)
+    auth_profile = auth_profile or auth_store.find_for(url)
+    auth_store.apply_profile(session, auth_profile)
+    session.guard_auth = True
     adapter = detect_adapter(url, session, limits,
                              forced=fm.get("adapter", "auto"))
     adapter.resolve(url, "page")
@@ -343,8 +415,13 @@ def start_import_cli(cfg: Config, store: ProjectStore, args) -> int:
 
 def sync_import_cli(cfg: Config, store: ProjectStore, args) -> int:
     project = store.get(args.project)
-    result = sync_import(cfg, project, args.import_id,
-                         progress=_cli_progress)
+    try:
+        result = sync_import(cfg, project, args.import_id,
+                             progress=_cli_progress)
+    except AuthRequiredError as e:
+        print()
+        print(json.dumps({"error": str(e)}, ensure_ascii=False))
+        return 2
     print()
     print(json.dumps(result, ensure_ascii=False, indent=1))
     return 0
@@ -352,6 +429,10 @@ def sync_import_cli(cfg: Config, store: ProjectStore, args) -> int:
 
 def refresh_page_cli(cfg: Config, store: ProjectStore, args) -> int:
     project = store.get(args.project)
-    result = refresh_page(cfg, project, args.wiki_path)
+    try:
+        result = refresh_page(cfg, project, args.wiki_path)
+    except AuthRequiredError as e:
+        print(json.dumps({"error": str(e)}, ensure_ascii=False))
+        return 2
     print(json.dumps(result, ensure_ascii=False, indent=1))
     return 0

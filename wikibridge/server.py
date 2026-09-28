@@ -319,6 +319,54 @@ def create_app(cfg: Config) -> Flask:
 
     # -- profili auth (write-only) ---------------------------------------------
 
+    # stato dell'ultimo login interattivo (il flusso apre il browser sulla
+    # macchina del server e attende il callback OAuth / la cattura cookie)
+    login_state: dict = {"running": False, "profile": None,
+                         "ok": None, "error": None, "result": None}
+
+    @app.post("/auth/login")
+    def auth_login():
+        body = request.get_json(force=True)
+        name = body.get("name", "")
+        if not name:
+            return jsonify({"error": "nome profilo mancante"}), 400
+        if login_state["running"]:
+            return jsonify({"error": "un login è già in corso",
+                            "profile": login_state["profile"]}), 409
+
+        def runner():
+            try:
+                login_state["result"] = auth_store.login(
+                    name, wait_for_user=False,
+                    capture_only=bool(body.get("capture")))
+                login_state["ok"] = True
+            except Exception as e:  # noqa: BLE001
+                log.exception("login %s fallito", name)
+                login_state.update(ok=False, error=str(e))
+            finally:
+                login_state["running"] = False
+
+        login_state.update(running=True, profile=name, ok=None,
+                           error=None, result=None)
+        threading.Thread(target=runner, daemon=True,
+                         name="wikibridge-auth-login").start()
+        return jsonify({"started": True, "profile": name,
+                        "note": "browser aperto sulla macchina del server; "
+                                "stato su GET /auth/login/status"}), 202
+
+    @app.get("/auth/login/status")
+    def auth_login_status():
+        return jsonify(login_state)
+
+    @app.post("/auth/detect")
+    def auth_detect():
+        from .oauth import detect_protection
+        body = request.get_json(force=True)
+        try:
+            return jsonify(detect_protection(body["url"], cfg.user_agent))
+        except Exception as e:  # noqa: BLE001
+            return jsonify({"error": str(e)}), 502
+
     @app.get("/auth/profiles")
     def auth_list():
         return jsonify(auth_store.names())

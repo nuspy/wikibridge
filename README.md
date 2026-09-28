@@ -78,6 +78,8 @@ wikibridge index                   # ricostruisce indice FTS + index.md
 wikibridge graph                   # rigenera graph.json/graph.html
 wikibridge catalog-drain           # cataloga i task _pending con LM Studio
 wikibridge auth add <nome> --type bearer|basic|header|cookie|oauth2
+wikibridge auth detect <url> [--save NOME]   # riconosce OAuth/SSO/basic
+wikibridge auth login <nome> [--no-browser]  # login dal browser, salva i token
 wikibridge serve                   # API HTTP :8775
 wikibridge skill ensure-llmwiki    # verifica/installa la skill llm-wiki
 ```
@@ -102,9 +104,33 @@ Opzione globale `--project <slug>` (default: progetto attivo).
 Profili in `secrets/auth_profiles.json` (mai nel repo; i valori accettano
 l'indirection `env:VARIABILE`). Tipi: `bearer` (Notion, PAT Confluence
 Server), `basic` (Confluence Cloud: email + API token), `header`,
-`cookie` (stringa o cookies.txt per intranet con SSO), `oauth2`
-(refresh-token flow). L'API HTTP espone i profili **write-only**: i
-segreti non vengono mai riletti.
+`cookie` (SSO aziendale a sessione), `oauth2` (Authorization Code +
+PKCE). L'API HTTP espone i profili **write-only**: i segreti non vengono
+mai riletti.
+
+**Flusso OAuth/SSO automatico** — per wiki protette da Azure AD, Google,
+Okta, Auth0, Atlassian o SSO a form:
+
+1. `wikibridge auth detect <url> --save intranet` sonda l'URL, riconosce
+   l'IdP (dal redirect, dal WWW-Authenticate o dal form di login) e crea
+   il profilo con endpoint e scope precompilati (per OAuth serve il
+   `client_id` di una app registrata dall'amministratore, redirect
+   `http://127.0.0.1:8776/callback`).
+2. `wikibridge auth login intranet` apre il browser: l'utente fa login
+   (MFA incluso) e i token — o i cookie di sessione, catturati dal
+   browser con browser-cookie3 — vengono salvati in `secrets/`.
+3. Da qui in poi tutto è automatico: il profilo è associato all'host
+   (`hosts` nel profilo), quindi `import`/`sync`/`refresh` lo selezionano
+   da soli senza `--auth-profile`; l'access token è rinnovato in silenzio
+   col refresh token (rotazione inclusa) e, se anche il refresh scade,
+   riparte il login nel browser (disattivabile con
+   `auth_interactive: false` per ambienti headless).
+
+Durante gli import la sessione riconosce i **muri di login** (401,
+redirect all'IdP, form di login al posto del contenuto): niente pagine
+"access denied" nella wiki — il job fa re-login e riprova, oppure si
+ferma in stato `auth_required` con la frontiera salvata per riprendere
+dopo `auth login`.
 
 ## Catalogazione LLM (tre modalità)
 
@@ -123,8 +149,9 @@ sezione "Menzioni"; le relazioni alimentano il grafo.
 `/health`, `/projects` (+`/activate`), `/imports` (start/list/get/
 cancel/sync), `/ingest` (+`/dir`), `/meetings` (push riunioni),
 `/wiki/tree|page|refresh`, `/search`, `/graph`, `/catalog/drain`,
-`/skill/status|install`, `/auth/profiles`. Bearer opzionale
-(`api_auth_token` in config.json).
+`/skill/status|install`, `/auth/profiles`, `/auth/detect`,
+`/auth/login` (+`/status`: login interattivo, browser sulla macchina del
+server). Bearer opzionale (`api_auth_token` in config.json).
 
 ## Integrazione callAPIcall
 

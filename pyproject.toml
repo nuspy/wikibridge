@@ -18,6 +18,7 @@ dependencies = [
     "flask-cors>=4.0",
     "python-slugify>=8.0",
     "pyyaml>=6.0",
+    "browser-cookie3>=0.19",
 ]
 
 [project.scripts]

@@ -2,6 +2,10 @@
 
 Tutte le richieste degli adapter passano da qui; il RateLimiter per host
 è agganciato come hook, quindi nessun adapter può superare il tetto.
+Con guard_auth attivo (impostato dall'importer) ogni risposta che è un
+muro di login (401, redirect a IdP, form di login al posto del
+contenuto) diventa AuthRequiredError, così l'import può fare re-login
+automatico invece di salvare pagine "access denied".
 """
 from __future__ import annotations
 
@@ -11,8 +15,10 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from .auth import AuthRequiredError
 from .config import Config
 from .limits import ImportLimits, RateLimiter
+from .oauth import looks_like_auth_wall
 
 
 class ThrottledSession(requests.Session):
@@ -20,6 +26,7 @@ class ThrottledSession(requests.Session):
         super().__init__()
         self._limiter = limiter
         self._timeout_s = timeout_s
+        self.guard_auth = False
         self.headers["User-Agent"] = user_agent
         retry = Retry(total=3, backoff_factor=1.5,
                       status_forcelist=(429, 500, 502, 503, 504),
@@ -33,7 +40,12 @@ class ThrottledSession(requests.Session):
         if host:
             self._limiter.wait(host)
         kwargs.setdefault("timeout", self._timeout_s)
-        return super().request(method, url, **kwargs)
+        resp = super().request(method, url, **kwargs)
+        if self.guard_auth and not urlparse(url).path.endswith("/robots.txt"):
+            reason = looks_like_auth_wall(resp)
+            if reason:
+                raise AuthRequiredError(url, reason)
+        return resp
 
 
 def make_session(cfg: Config, limits: ImportLimits) -> ThrottledSession:

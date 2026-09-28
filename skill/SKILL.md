@@ -40,6 +40,8 @@ syntheses/, meetings/), `graph/`, `index.db` (ricerca FTS), `_pending/`
 | refresh di una pagina | `wikibridgectl.py refresh <wiki-path>` |
 | /wiki-install-llmwiki — installa la skill llm-wiki | `wikibridgectl.py ensure-llmwiki` |
 | profili auth | `wikibridgectl.py auth add <nome> --type bearer\|basic\|header\|cookie\|oauth2` |
+| protezione OAuth/SSO di un URL | `wikibridgectl.py auth detect <url> [--save nome]` |
+| login OAuth/SSO dal browser | `wikibridgectl.py auth login <nome>` (salva token/cookie; poi gli import sono automatici) |
 
 Default sensati: depth 1, scope page, max 200 pagine — il caso "dammi un
 RAG da questo link" funziona senza altri parametri.
@@ -57,9 +59,14 @@ RAG da questo link" funziona senza altri parametri.
    il risultato con:
    `wikibridgectl.py catalog-apply <source-path> --json '<json>' [--project slug]`
    (rimuove da solo il task da _pending/). Non chiamare API LLM esterne.
-3. **Autorizzazione**: se l'import fallisce con 401/403 chiedi all'utente
-   le credenziali e crea un profilo con `auth add` (i segreti finiscono in
-   secrets/, mai nel repo). Per Notion serve un'integrazione condivisa
-   con la pagina; per Confluence Cloud email+API token (tipo basic).
+3. **Autorizzazione**: se l'import finisce in stato `auth_required` (o
+   fallisce con 401/403), esegui `auth detect <url> --save <nome>` per
+   riconoscere la protezione, poi `auth login <nome>`: si apre il browser,
+   l'utente fa login (OAuth/SSO, MFA incluso) e token/cookie vengono
+   salvati in secrets/ — da lì gli import futuri sono automatici (profilo
+   selezionato per host, refresh silenzioso). Per credenziali statiche usa
+   `auth add`: Notion integrazione condivisa con la pagina (bearer);
+   Confluence Cloud email+API token (basic). I segreti non vanno mai nel
+   repo.
 4. **Prima volta**: esegui `ensure-llmwiki` per verificare/installare la
    skill llm-wiki sugli agenti (Hermes, OpenClaw, Claude Code).

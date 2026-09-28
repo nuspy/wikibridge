@@ -1,0 +1,1309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WikiBridge — User &amp; Reference Manual</title>
+<meta name="description" content="Complete user and API reference manual for WikiBridge: import external wikis and local documents into a project-scoped local LLM Wiki.">
+<style>
+/* ==================================================================
+   WikiBridge Manual — commercial print-ready stylesheet
+   Two-column body layout, A4 print geometry, screen-friendly.
+   ================================================================== */
+:root {
+  --ink: #1c2026;
+  --muted: #5c6672;
+  --accent: #0f4c81;
+  --accent-2: #b4531f;
+  --rule: #d9dee4;
+  --code-bg: #f3f5f8;
+  --band: #eef2f6;
+  --ok: #2c7a3f;
+  --warn: #a15c00;
+  --danger: #a02c2c;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  color: var(--ink);
+  font: 10.75pt/1.5 "Source Serif 4", "Palatino Linotype", Palatino, Georgia, serif;
+  background: #fff;
+  counter-reset: chapter;
+}
+main { max-width: 210mm; margin: 0 auto; padding: 0 12mm 24mm; }
+
+/* ---- typography ---------------------------------------------------- */
+h1, h2, h3, h4 { font-family: "Inter", "Segoe UI", Helvetica, Arial, sans-serif; color: var(--accent); line-height: 1.2; }
+h1 { font-size: 21pt; margin: 1.6em 0 .5em; padding-bottom: .3em; border-bottom: 3px solid var(--accent); break-before: page; }
+h2 { font-size: 14.5pt; margin: 1.5em 0 .45em; }
+h3 { font-size: 12pt;  margin: 1.2em 0 .35em; color: #123a5e; }
+h4 { font-size: 10.75pt; margin: 1em 0 .3em; color: var(--accent-2); }
+p  { margin: .35em 0 .7em; text-align: justify; hyphens: auto; }
+li { margin: .18em 0; }
+strong { color: #10141a; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+sup.fnref { font-size: 7.5pt; color: var(--accent-2); }
+
+/* ---- two-column engine --------------------------------------------- */
+.twocol {
+  column-count: 2;
+  column-gap: 8mm;
+  column-rule: .5pt solid var(--rule);
+  text-align: justify;
+}
+.twocol h2, .twocol h1 { column-span: all; }
+.twocol h2 { border-bottom: 1.5px solid var(--rule); padding-bottom: .2em; }
+.nobreak, .fn, .cfg, .cmd, .ep, table, pre, .note, .tip, .warnbox {
+  break-inside: avoid; page-break-inside: avoid;
+}
+
+/* ---- code ----------------------------------------------------------- */
+code, kbd {
+  font: 9.1pt/1.4 "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  background: var(--code-bg); border-radius: 3px; padding: 0 3px;
+}
+pre {
+  font: 8.9pt/1.42 "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  background: var(--code-bg); border: .5pt solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px; padding: 7px 10px; overflow-x: auto;
+  white-space: pre-wrap; word-break: break-word;
+}
+pre code { background: none; padding: 0; }
+
+/* ---- tables ---------------------------------------------------------- */
+table { border-collapse: collapse; width: 100%; margin: .5em 0 .9em; font-size: 9.3pt; }
+th { background: var(--band); color: #143a5c; text-align: left;
+     font-family: "Inter","Segoe UI",sans-serif; font-size: 8.6pt;
+     text-transform: uppercase; letter-spacing: .04em; }
+th, td { border: .5pt solid var(--rule); padding: 4px 7px; vertical-align: top; }
+tr:nth-child(even) td { background: #fafbfc; }
+td code { font-size: 8.6pt; }
+
+/* ---- reference blocks ------------------------------------------------ */
+.fn, .cfg, .cmd, .ep {
+  border: .5pt solid var(--rule); border-left: 3.5px solid var(--accent);
+  border-radius: 4px; padding: 7px 10px 8px; margin: .65em 0;
+  background: #fcfdfe;
+}
+.cmd { border-left-color: var(--accent-2); }
+.ep  { border-left-color: #5a3f9e; }
+.sig {
+  font: bold 9.4pt/1.45 "JetBrains Mono", Consolas, monospace;
+  color: #10365c; margin-bottom: .35em; word-break: break-word;
+}
+.ep .sig { color: #3d2a70; }
+.cmd .sig { color: #7a3812; }
+.fn p, .cfg p, .cmd p, .ep p { margin: .3em 0; }
+.tag {
+  display: inline-block; font: 700 7.2pt/1.6 "Inter","Segoe UI",sans-serif;
+  text-transform: uppercase; letter-spacing: .06em; border-radius: 3px;
+  padding: 0 6px; margin-left: 6px; vertical-align: 15%;
+}
+.tag.cls  { background: #e4ecf5; color: var(--accent); }
+.tag.func { background: #e8f3e9; color: var(--ok); }
+.tag.meth { background: #f5efe4; color: var(--warn); }
+.tag.exc  { background: #f7e6e6; color: var(--danger); }
+.tag.prop { background: #efe8f7; color: #5a3f9e; }
+.tag.get  { background: #e8f3e9; color: var(--ok); }
+.tag.post { background: #e4ecf5; color: var(--accent); }
+.tag.del  { background: #f7e6e6; color: var(--danger); }
+
+/* ---- callouts --------------------------------------------------------- */
+.note, .tip, .warnbox {
+  border-radius: 4px; padding: 7px 11px; margin: .6em 0; font-size: 9.6pt;
+}
+.note    { background: #eef3f9; border-left: 3.5px solid var(--accent); }
+.tip     { background: #edf6ee; border-left: 3.5px solid var(--ok); }
+.warnbox { background: #fbf1e6; border-left: 3.5px solid var(--warn); }
+.note b:first-child, .tip b:first-child, .warnbox b:first-child {
+  font-family: "Inter","Segoe UI",sans-serif; font-size: 8.4pt;
+  text-transform: uppercase; letter-spacing: .05em;
+}
+
+/* ---- cover ------------------------------------------------------------ */
+.cover {
+  min-height: 90vh; display: flex; flex-direction: column;
+  justify-content: center; padding: 20mm 6mm;
+  border-bottom: 6px solid var(--accent);
+}
+.cover .brand { font: 800 34pt/1.05 "Inter","Segoe UI",sans-serif; color: var(--accent); letter-spacing: -.5px; }
+.cover .brand span { color: var(--accent-2); }
+.cover .subtitle { font: 400 14pt/1.5 "Inter","Segoe UI",sans-serif; color: var(--muted); margin-top: 8px; }
+.cover .meta { margin-top: 34px; font: 400 10pt/1.8 "Inter","Segoe UI",sans-serif; color: var(--muted); }
+.cover .meta b { color: var(--ink); }
+.badgeline { margin-top: 20px; }
+.badgeline span {
+  display: inline-block; font: 600 8pt/1.7 "Inter","Segoe UI",sans-serif;
+  background: var(--band); color: var(--accent); border-radius: 12px;
+  padding: 1px 11px; margin: 0 6px 6px 0;
+}
+
+/* ---- table of contents -------------------------------------------------- */
+.toc { column-count: 2; column-gap: 8mm; font-size: 9.8pt; }
+.toc ol { margin: 0 0 0 1.2em; padding: 0; }
+.toc > ol > li { font-weight: 700; margin: .45em 0;
+                 font-family: "Inter","Segoe UI",sans-serif; }
+.toc ol ol { font-weight: 400; font-family: "Source Serif 4", Georgia, serif; margin-top: .15em; }
+.toc a { color: var(--ink); }
+.toc a:hover { color: var(--accent); }
+
+/* ---- print --------------------------------------------------------------- */
+@page {
+  size: A4;
+  margin: 17mm 13mm 19mm;
+  @bottom-center { content: "WikiBridge — User & Reference Manual  ·  page " counter(page); font: 8pt "Inter", sans-serif; color: #778; }
+}
+@media print {
+  main { max-width: none; padding: 0; }
+  .cover { min-height: 250mm; }
+  a { color: inherit; }
+  h1 { break-before: page; }
+}
+.kbdpath { white-space: nowrap; }
+.small { font-size: 9pt; color: var(--muted); }
+hr.sep { border: 0; border-top: .5pt solid var(--rule); margin: 1.2em 0; }
+</style>
+</head>
+<body>
+<main>
+
+<!-- ================================================================ -->
+<!-- COVER                                                             -->
+<!-- ================================================================ -->
+<section class="cover">
+  <div class="brand">Wiki<span>Bridge</span></div>
+  <div class="subtitle">User &amp; Reference Manual — import external wikis and local documents<br>
+  into a project-scoped local LLM&nbsp;Wiki with full-text search, knowledge graph and LLM cataloguing.</div>
+  <div class="meta">
+    <b>Product</b>&nbsp;&nbsp;WikiBridge 0.1<br>
+    <b>Document</b>&nbsp;&nbsp;Complete User &amp; API Reference, Edition 1.0<br>
+    <b>Covers</b>&nbsp;&nbsp;CLI · HTTP API · Python API · Authentication (OAuth&nbsp;2.0/PKCE, SSO, cookies) · Adapters · Cataloguing · Knowledge graph<br>
+    <b>Platforms</b>&nbsp;&nbsp;Windows, WSL, Linux · Python ≥ 3.10
+  </div>
+  <div class="badgeline">
+    <span>MediaWiki</span><span>Confluence</span><span>Notion</span><span>Generic HTML</span>
+    <span>PDF/DOCX/PPTX ingest</span><span>OAuth 2.0 + PKCE</span><span>SQLite FTS5</span>
+    <span>vis-network graph</span><span>Flask API :8775</span>
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- ABOUT THIS MANUAL                                                 -->
+<!-- ================================================================ -->
+<h1 id="about">About This Manual</h1>
+<div class="twocol">
+<p>This manual is the complete, self-contained documentation of <strong>WikiBridge</strong>. It is written for three audiences at once: <em>end users</em> who drive the tool from the command line or from a GUI backed by the HTTP API; <em>administrators</em> who configure authentication against corporate identity providers and schedule imports; and <em>developers</em> who embed WikiBridge as a Python library, write new source adapters, or integrate agents through the skill layer.</p>
+<p>Every public module, class, function and method of the code base is documented here, including each parameter, its type, its default and its behaviour, along with the private helpers that matter for understanding the system. Procedures ("how do I…") are collected in Part&nbsp;II; exhaustive references follow in Parts&nbsp;III–VII.</p>
+
+<h3>Typographic conventions</h3>
+<table>
+<tr><th>Convention</th><th>Meaning</th></tr>
+<tr><td><code>monospace</code></td><td>Commands, file names, code identifiers, literal values.</td></tr>
+<tr><td><code>&lt;angle&nbsp;brackets&gt;</code></td><td>Mandatory placeholder you must replace.</td></tr>
+<tr><td><code>[square&nbsp;brackets]</code></td><td>Optional argument.</td></tr>
+<tr><td><code>a|b|c</code></td><td>Choose exactly one of the listed values.</td></tr>
+<tr><td><span class="tag func">function</span> <span class="tag cls">class</span> <span class="tag meth">method</span> <span class="tag exc">exception</span></td><td>Kind of the documented Python symbol.</td></tr>
+<tr><td><span class="tag get">GET</span> <span class="tag post">POST</span> <span class="tag del">DELETE</span></td><td>HTTP verb of an API endpoint.</td></tr>
+</table>
+
+<div class="note"><b>Note</b> — WikiBridge's source code carries Italian docstrings and produces some Italian user-facing strings (page sections such as <i>Fonti</i>/<i>Entità</i>, log lines, error messages). This manual is in English; where a literal string matters, the Italian original is quoted verbatim.</div>
+
+<h3>Version covered</h3>
+<p>This edition documents WikiBridge <strong>0.1.0</strong> including the interactive OAuth&nbsp;2.0 / SSO authentication subsystem (modules <code>wikibridge.oauth</code>, extended <code>wikibridge.auth</code>, login-wall guard in <code>wikibridge.http</code>). Known issues in this release are catalogued in Part&nbsp;VIII.</p>
+</div>
+
+<!-- ================================================================ -->
+<!-- TOC                                                                -->
+<!-- ================================================================ -->
+<h1 id="toc">Table of Contents</h1>
+<nav class="toc">
+<ol>
+  <li><a href="#part1">Part I — Getting Started</a>
+    <ol>
+      <li><a href="#p1-what">What WikiBridge is</a></li>
+      <li><a href="#p1-arch">Architecture at a glance</a></li>
+      <li><a href="#p1-install">Installation</a></li>
+      <li><a href="#p1-quick">Ten-minute quick start</a></li>
+      <li><a href="#p1-layout">On-disk layout</a></li>
+    </ol>
+  </li>
+  <li><a href="#part2">Part II — User Guide (Procedures)</a>
+    <ol>
+      <li><a href="#p2-projects">Working with projects</a></li>
+      <li><a href="#p2-import">Importing an external wiki</a></li>
+      <li><a href="#p2-auth">Authentication: from static tokens to corporate OAuth/SSO</a></li>
+      <li><a href="#p2-ingest">Ingesting local documents</a></li>
+      <li><a href="#p2-search">Searching, indexing, browsing</a></li>
+      <li><a href="#p2-catalog">LLM cataloguing and the knowledge graph</a></li>
+      <li><a href="#p2-sync">Keeping content fresh: sync and refresh</a></li>
+      <li><a href="#p2-server">Running the HTTP server / GUI backend</a></li>
+      <li><a href="#p2-skill">Agent integration (skill layer)</a></li>
+    </ol>
+  </li>
+  <li><a href="#part3">Part III — Configuration Reference</a></li>
+  <li><a href="#part4">Part IV — Command-Line Reference</a></li>
+  <li><a href="#part5">Part V — HTTP API Reference</a></li>
+  <li><a href="#part6">Part VI — Python Module Reference</a>
+    <ol>
+      <li><a href="#m-config">wikibridge.config</a></li>
+      <li><a href="#m-projects">wikibridge.projects</a></li>
+      <li><a href="#m-limits">wikibridge.limits</a></li>
+      <li><a href="#m-http">wikibridge.http</a></li>
+      <li><a href="#m-auth">wikibridge.auth</a></li>
+      <li><a href="#m-oauth">wikibridge.oauth</a></li>
+      <li><a href="#m-adapters">wikibridge.adapters (base, generic, mediawiki, confluence, notion)</a></li>
+      <li><a href="#m-convert">wikibridge.convert (html_md, docs)</a></li>
+      <li><a href="#m-wiki">wikibridge.wiki (writer, search, graph)</a></li>
+      <li><a href="#m-brain">wikibridge.brain</a></li>
+      <li><a href="#m-catalog">wikibridge.catalog</a></li>
+      <li><a href="#m-importer">wikibridge.importer</a></li>
+      <li><a href="#m-server">wikibridge.server</a></li>
+      <li><a href="#m-cli">wikibridge.cli</a></li>
+      <li><a href="#m-skill">skill/wikibridgectl.py</a></li>
+      <li><a href="#m-scripts">scripts/ensure_llmwiki.py</a></li>
+    </ol>
+  </li>
+  <li><a href="#part7">Part VII — Data &amp; File Formats</a></li>
+  <li><a href="#part8">Part VIII — Troubleshooting, Known Issues &amp; Limits</a></li>
+  <li><a href="#appa">Appendix A — Documentation coverage audit</a></li>
+  <li><a href="#appb">Appendix B — Glossary</a></li>
+</ol>
+</nav>
+
+<!-- ================================================================ -->
+<!-- PART I                                                            -->
+<!-- ================================================================ -->
+<h1 id="part1">Part I — Getting Started</h1>
+<div class="twocol">
+
+<h2 id="p1-what">1.1&ensp;What WikiBridge is</h2>
+<p>WikiBridge turns scattered knowledge — corporate wikis, documentation sites, Notion workspaces, folders of PDF and Office documents — into a <strong>local, project-scoped “LLM Wiki”</strong>: a tree of plain Markdown pages with YAML frontmatter, a SQLite FTS5 full-text index, and an automatically generated knowledge graph. The result is a self-contained corpus that a human can browse with any editor and that an LLM agent can consume as retrieval context (a local RAG), without any external service.</p>
+<p>The pipeline has four stages, each usable on its own:</p>
+<ol>
+  <li><strong>Acquire</strong> — source <em>adapters</em> download content from MediaWiki, Confluence, Notion, or any HTML site (generic crawler); a separate <em>ingest</em> path converts local documents (PDF, DOCX, PPTX, XLSX, HTML, CSV, EPUB…) with <code>markitdown</code>.</li>
+  <li><strong>Normalise</strong> — everything becomes Markdown with rich frontmatter (<code>url</code>, <code>revision</code>, <code>content_sha256</code>), enabling deduplication and incremental synchronisation.</li>
+  <li><strong>Catalogue</strong> — an LLM “brain” (LM Studio over an OpenAI-compatible endpoint, or the hosting agent itself) extracts <em>entities</em>, <em>concepts</em> and <em>relations</em> from every page and writes them as first-class wiki pages with backlinks.</li>
+  <li><strong>Serve</strong> — a Flask HTTP API (default <code>127.0.0.1:8775</code>) exposes all operations to GUIs; a skill layer exposes them to coding agents.</li>
+</ol>
+<p>Authentication against protected sources is a first-class concern: WikiBridge stores reusable <em>auth profiles</em> (bearer, basic, header, cookie, OAuth&nbsp;2.0) and, for corporate SSO, performs a full <strong>browser-based OAuth 2.0 Authorization Code + PKCE login</strong>, persists the tokens, refreshes them silently, auto-selects the right profile per host, and detects “login walls” during a crawl so that protected pages are never silently saved as <i>access denied</i> boilerplate.</p>
+
+<h2 id="p1-arch">1.2&ensp;Architecture at a glance</h2>
+<pre>
+             ┌────────────┐   ┌───────────────┐
+ CLI ───────►│            │   │ Auth profiles │
+ HTTP :8775 ►│  importer  │◄──┤ + OAuth/PKCE  │
+ skill ─────►│  (BFS+     │   │ + cookie SSO  │
+             │   limits)  │   └───────────────┘
+             └─────┬──────┘
+      ┌────────────┼──────────────┬─────────────┐
+      ▼            ▼              ▼             ▼
+ ┌─────────┐ ┌───────────┐ ┌────────────┐ ┌──────────┐
+ │MediaWiki│ │Confluence │ │   Notion   │ │ Generic  │
+ │ adapter │ │  adapter  │ │  adapter   │ │ crawler  │
+ └────┬────┘ └─────┬─────┘ └─────┬──────┘ └────┬─────┘
+      └──────┬─────┴───────┬─────┴───────┬─────┘
+             ▼             ▼             ▼
+        html_to_markdown / block renderer / markitdown
+             │
+             ▼
+ ┌──────────────────────────────────────────────────┐
+ │  wiki/ (Markdown + frontmatter)   index.db (FTS5)│
+ │  sources/ entities/ concepts/ syntheses/ meetings│
+ └──────────┬────────────────────────┬──────────────┘
+            ▼                        ▼
+     catalog (brain LLM)      graph.json / graph.html
+</pre>
+<p>Each box maps to one Python module documented in Part&nbsp;VI. The <em>importer</em> owns the breadth-first crawl, all limits and the job history; adapters only know how to <em>resolve</em> a seed set, <em>fetch</em> one page and answer <em>changed_since</em>. All HTTP traffic funnels through one shared <code>ThrottledSession</code> that enforces the per-host rate limit, retries, timeouts, and (during imports) the login-wall guard.</p>
+
+<h2 id="p1-install">1.3&ensp;Installation</h2>
+<h3>Requirements</h3>
+<ul>
+  <li>Python <strong>≥ 3.10</strong> (Windows, WSL or Linux).</li>
+  <li><code>git</code> (only for the optional <code>skill ensure-llmwiki</code> installer).</li>
+  <li>Optionally <a href="https://lmstudio.ai">LM Studio</a> (or any OpenAI-compatible endpoint) for automatic cataloguing.</li>
+</ul>
+<h3>Install from the repository</h3>
+<pre>cd C:\Projects\wikibridge
+python -m venv .venv
+.venv\Scripts\activate          # Linux/WSL: source .venv/bin/activate
+pip install -e .                # or: pip install -r requirements.txt</pre>
+<p>The editable install registers the <code>wikibridge</code> console script (entry point <code>wikibridge.cli:main</code>). Dependencies: <code>requests</code>, <code>beautifulsoup4</code>, <code>markdownify</code>, <code>trafilatura</code>, <code>markitdown</code>, <code>flask</code>, <code>flask-cors</code>, <code>python-slugify</code>, <code>pyyaml</code>, <code>browser-cookie3</code> (SSO cookie capture).</p>
+<div class="tip"><b>Tip</b> — WikiBridge computes all data paths from the package location, so the CLI, the HTTP server and the agent skill see the same data whether launched from Windows (<code>C:\Projects\wikibridge</code>) or from WSL (<code>/mnt/c/Projects/wikibridge</code>).</div>
+
+<h2 id="p1-quick">1.4&ensp;Ten-minute quick start</h2>
+<pre># 1. create a project and make it active
+wikibridge project create "Product Docs" --description "Vendor documentation"
+
+# 2. import a public documentation site, 1 level deep
+wikibridge import https://docs.example.com/guide --depth 1 --scope subtree
+
+# 3. drop a folder of PDFs into the same project
+wikibridge ingest "D:\specs" --recursive
+
+# 4. search everything you just captured
+wikibridge search "rate limiting"
+
+# 5. regenerate the knowledge graph and open it
+wikibridge graph
+#   → data/projects/product-docs/graph/graph.html</pre>
+<p>For a wiki protected by corporate SSO, add two commands before the import — the rest is automatic (see §2.3):</p>
+<pre>wikibridge auth detect https://wiki.corp.example/Home --save corp
+wikibridge auth login corp          # browser opens; log in once
+wikibridge import https://wiki.corp.example/Home --depth 2</pre>
+
+<h2 id="p1-layout">1.5&ensp;On-disk layout</h2>
+<pre>wikibridge/                  repository root
+├─ config.json               optional overrides (Part III)
+├─ data/
+│  ├─ projects.json          project registry + active slug
+│  └─ projects/&lt;slug&gt;/
+│     ├─ project.json        metadata snapshot
+│     ├─ imports.json        import job history (Part VII)
+│     ├─ index.db            SQLite FTS5 index
+│     ├─ _pending/           queued catalogue tasks (agent mode)
+│     ├─ graph/              graph.json · graph.html · relations.jsonl
+│     └─ wiki/
+│        ├─ index.md         auto-generated catalogue of all pages
+│        ├─ overview.md      current synthesis (cataloguer-maintained)
+│        ├─ log.md           chronological operation log
+│        ├─ sources/         one page per imported document/web page
+│        ├─ entities/        people/orgs/systems (cataloguer)
+│        ├─ concepts/        ideas and themes (cataloguer)
+│        ├─ syntheses/       saved answers/articles
+│        └─ meetings/        one page per meeting
+└─ secrets/
+   ├─ auth_profiles.json     auth profiles (never in the repo)
+   ├─ .tokens.json           OAuth access/refresh token cache
+   └─ cookies/&lt;profile&gt;.txt  captured SSO cookies (Mozilla format)</pre>
+<div class="warnbox"><b>Security</b> — everything under <code>secrets/</code> holds credentials. Keep it out of version control and out of shared backups. Values inside <code>auth_profiles.json</code> may use the <code>env:VARIABLE</code> indirection to avoid persisting a secret at all (§2.3.2).</div>
+</div>
+
+<!-- ================================================================ -->
+<!-- PART II                                                           -->
+<!-- ================================================================ -->
+<h1 id="part2">Part II — User Guide (Procedures)</h1>
+<div class="twocol">
+
+<h2 id="p2-projects">2.1&ensp;Working with projects</h2>
+<p>All knowledge in WikiBridge is <strong>isolated per project</strong>. A project is identified by a <em>slug</em> (lower-case, digits and dashes, derived automatically from the name) and owns its own wiki tree, FTS index, import history, graph and pending catalogue queue. One project is <em>active</em> at any time; every command operates on the active project unless you pass the global <code>--project &lt;slug&gt;</code> option.</p>
+<h3>Procedure — create, switch, list, delete</h3>
+<pre>wikibridge project create "ACME Rollout" --description "2026 rollout knowledge"
+wikibridge project list          # JSON list; "active": true marks the current one
+wikibridge project switch acme-rollout
+wikibridge project delete old-project</pre>
+<ul>
+<li><b>create</b> fails with an error if the slug already exists. The slug of <i>"ACME Rollout"</i> is <code>acme-rollout</code>.</li>
+<li><b>delete</b> removes the project from the registry only; <em>files on disk are preserved</em> and must be removed manually (a deliberate safety choice). The <code>default</code> project cannot be deleted.</li>
+<li>If no project exists yet, the first command that needs one auto-creates <code>default</code>.</li>
+</ul>
+
+<h2 id="p2-import">2.2&ensp;Importing an external wiki</h2>
+<p>An import is a resumable <em>job</em>: it resolves a seed set from your URL, walks links breadth-first within the same wiki, converts every page to Markdown and records the job in <code>imports.json</code>. The three knobs that shape an import are <em>adapter</em>, <em>scope</em> and <em>depth</em>; everything else is guarded by limits (§3).</p>
+
+<h3>2.2.1&ensp;Choosing the adapter</h3>
+<p><code>--adapter auto</code> (default) sniffs the URL: Notion hosts first, then Confluence URL patterns, then a MediaWiki <code>api.php</code> probe; anything else falls back to the <strong>generic HTML crawler</strong>. Force a specific adapter with <code>--adapter generic|mediawiki|confluence|notion</code> when sniffing guesses wrong (e.g. a MediaWiki behind a non-standard path).</p>
+<table>
+<tr><th>Adapter</th><th>Talks to</th><th>Revision used for sync</th><th>Typical auth</th></tr>
+<tr><td><code>mediawiki</code></td><td>action API <code>api.php</code> (parse, categorymembers, allpages)</td><td><code>revid</code></td><td>none / cookie / oauth2</td></tr>
+<tr><td><code>confluence</code></td><td>REST <code>/rest/api</code> (content, children, space)</td><td><code>version.number</code></td><td>basic (email+API token, Cloud) / bearer (PAT, Server) / oauth2</td></tr>
+<tr><td><code>notion</code></td><td>official API <code>api.notion.com/v1</code> (blocks, pages)</td><td><code>last_edited_time</code></td><td>bearer (integration token)</td></tr>
+<tr><td><code>generic</code></td><td>plain HTTP + HTML parsing</td><td><code>ETag</code> / <code>Last-Modified</code></td><td>any</td></tr>
+</table>
+
+<h3>2.2.2&ensp;Scope and depth</h3>
+<p><b>Scope</b> decides the <em>seed set</em>; <b>depth</b> decides how far the BFS follows links <em>within the same wiki</em> from those seeds (0 = seeds only; hard cap 3).</p>
+<table>
+<tr><th>Scope</th><th>generic</th><th>mediawiki</th><th>confluence</th><th>notion</th></tr>
+<tr><td><code>page</code></td><td>the page; followed links stay same-host</td><td>the page</td><td>the page</td><td rowspan="3">the page; child pages surface as links, so scope≡depth</td></tr>
+<tr><td><code>subtree</code></td><td>pages under the seed's path prefix</td><td><code>Category:</code> members (recursive) or page + direct links</td><td>descendants via <code>children.page</code> (recursive)</td></tr>
+<tr><td><code>space</code></td><td>whole host</td><td>namespace 0 via <code>allpages</code></td><td>whole space via <code>spaceKey</code></td></tr>
+</table>
+<h3>2.2.3&ensp;Procedure — a typical guided import</h3>
+<pre># preview scale first: keep limits tight
+wikibridge import https://wiki.example/Category:API \
+    --scope subtree --depth 1 --max-pages 50 \
+    --include "API*" --exclude "*Deprecated*"
+
+# happy with the result? raise the caps and resume:
+#   truncated jobs keep their frontier and can be re-run</pre>
+<ul>
+<li><code>--include/--exclude</code> take shell-style globs matched against page <em>titles</em> (or URL when a title is missing). Repeat the option to add patterns; exclude wins.</li>
+<li><code>--no-catalog</code> skips LLM cataloguing for this run (you can drain later, §2.6).</li>
+<li>The command prints live progress (<code>[fetching] 12/50 Page title…</code>) and a final JSON summary with <code>id</code>, <code>state</code>, <code>pages</code>, <code>skipped</code>, <code>truncated</code>, <code>errors</code>. Exit code 0 only when <code>state="done"</code>.</li>
+</ul>
+<div class="note"><b>Note</b> — a page that fails to download or convert never aborts the job; it is recorded in <code>errors</code> and counted in <code>skipped</code>. Whole-job aborts happen only for global conditions: total-size budget, wall-clock limit, cancellation, or an authentication wall (§2.3.6).</div>
+
+<h3>2.2.4&ensp;What lands on disk</h3>
+<p>Every page becomes <code>wiki/sources/&lt;slug&gt;.md</code> with frontmatter: <code>title</code>, <code>kind: web</code>, <code>url</code>, <code>import_id</code>, <code>revision</code>, <code>content_sha256</code>, <code>updated</code>, <code>adapter</code>. Identical content (same SHA-256) is never rewritten — this powers incremental sync. The FTS index is updated per page and <code>index.md</code> is regenerated at job end.</p>
+
+<h2 id="p2-auth">2.3&ensp;Authentication: from static tokens to corporate OAuth/SSO</h2>
+<p>Auth is expressed as named, reusable <strong>profiles</strong> stored in <code>secrets/auth_profiles.json</code>. Adapters never see credentials: a profile is <em>applied</em> to the shared HTTP session (header, basic auth pair, cookies…) before any request is made.</p>
+
+<h3>2.3.1&ensp;Profile types</h3>
+<table>
+<tr><th>Type</th><th>Fields</th><th>Session effect</th><th>Use for</th></tr>
+<tr><td><code>none</code></td><td>—</td><td>nothing</td><td>explicit "no auth"</td></tr>
+<tr><td><code>bearer</code></td><td><code>token</code></td><td><code>Authorization: Bearer …</code></td><td>Notion integrations, Confluence Server PATs</td></tr>
+<tr><td><code>basic</code></td><td><code>username</code>, <code>password</code></td><td>HTTP Basic</td><td>Confluence Cloud (email + API token)</td></tr>
+<tr><td><code>header</code></td><td><code>name</code>, <code>value</code></td><td>arbitrary header</td><td>API keys, gateways</td></tr>
+<tr><td><code>cookie</code></td><td><code>cookies</code> (string or cookies.txt path), <code>domain</code>, <code>login_url</code></td><td>session cookies</td><td>form/SSO intranets without OAuth</td></tr>
+<tr><td><code>oauth2</code></td><td><code>issuer</code> <i>or</i> <code>auth_url</code>+<code>token_url</code>, <code>client_id</code>, opt. <code>client_secret</code>, <code>scopes</code>, <code>redirect_port</code>, <code>auth_params</code>, <code>refresh_token</code></td><td><code>Authorization: Bearer &lt;access&nbsp;token&gt;</code>, auto-refreshed</td><td>Azure AD, Google, Okta, Auth0, Atlassian, any OIDC IdP</td></tr>
+</table>
+<p>Every profile may also carry <code>hosts: ["wiki.corp.example", …]</code> — the list of wiki hosts it authenticates. This is what makes profile selection automatic (§2.3.5).</p>
+
+<h3>2.3.2&ensp;The <code>env:</code> indirection</h3>
+<p>Any credential field may hold the literal string <code>env:VARIABLE_NAME</code> instead of the secret itself. The value is then resolved from the environment at use time and the secret never touches the disk. If the variable is unset at runtime the operation fails with <i>"variabile d'ambiente mancante"</i>.</p>
+<pre>{"type": "basic", "username": "svc-wiki@corp.example",
+ "password": "env:WIKI_API_TOKEN", "hosts": ["wiki.corp.example"]}</pre>
+
+<h3>2.3.3&ensp;Procedure — detect what protects a URL</h3>
+<pre>wikibridge auth detect https://wiki.corp.example/Home --save corp</pre>
+<p><code>auth detect</code> makes one anonymous request and classifies the protection:</p>
+<table>
+<tr><th>kind</th><th>Signal observed</th><th>Suggested profile</th></tr>
+<tr><td><code>open</code></td><td>content readable anonymously</td><td>none needed</td></tr>
+<tr><td><code>basic</code></td><td>401 + <code>WWW-Authenticate: Basic</code></td><td><code>basic</code> (prompts for username/password on <code>--save</code>)</td></tr>
+<tr><td><code>oauth</code></td><td>redirect to a known IdP, or Bearer challenge</td><td><code>oauth2</code> pre-filled with provider endpoints/scopes (prompts for <code>client_id</code>)</td></tr>
+<tr><td><code>sso_form</code></td><td>login form served instead of content</td><td><code>cookie</code> with <code>domain</code>/<code>login_url</code> pre-filled</td></tr>
+</table>
+<p>Recognised IdPs with ready-made presets: <b>Azure AD / Entra ID</b> (tenant extracted from the redirect; OIDC issuer), <b>Google</b> (Desktop-app flow, <code>access_type=offline</code>), <b>Atlassian Cloud</b> (3LO endpoints, Confluence read scopes, <code>audience=api.atlassian.com</code>), <b>Okta</b> and <b>Auth0</b> (issuer = redirect host). Each preset includes a note telling the administrator what kind of app registration is required and which redirect URI to register: <code>http://127.0.0.1:8776/callback</code>.</p>
+
+<h3>2.3.4&ensp;Procedure — interactive browser login (OAuth 2.0 + PKCE)</h3>
+<pre>wikibridge auth login corp              # opens the system browser
+wikibridge auth login corp --no-browser # print the URL instead (SSH, kiosk)</pre>
+<ol>
+<li>WikiBridge builds an Authorization-Code-with-PKCE request (S256 challenge, random <code>state</code>) and starts a loopback listener on <code>http://127.0.0.1:&lt;redirect_port&gt;/callback</code> (default port 8776).</li>
+<li>Your browser opens the IdP's login page; you authenticate normally — MFA, conditional access, smart cards all work because it is a real browser session.</li>
+<li>The IdP redirects to the loopback listener; WikiBridge validates <code>state</code>, exchanges the code for tokens (adding <code>client_secret</code> only if the profile has one — public clients need none thanks to PKCE), and stores <em>access + refresh token</em> in <code>secrets/.tokens.json</code>.</li>
+<li>The command reports whether a refresh token was granted. If not, add the <code>offline_access</code> scope (or <code>access_type=offline</code> for Google) so future renewals are silent.</li>
+</ol>
+<p>Endpoints are found in this order: explicit <code>auth_url</code>/<code>token_url</code> in the profile → OIDC discovery on <code>issuer</code> (<code>/.well-known/openid-configuration</code>). The login times out after <code>auth_login_timeout_s</code> (default 300&nbsp;s).</p>
+
+<h3>2.3.5&ensp;What happens afterwards — the automatic path</h3>
+<ul>
+<li><b>Profile selection by host.</b> <code>import</code>/<code>sync</code>/<code>refresh</code> pick the profile whose <code>hosts</code> matches the URL host (exact or subdomain suffix) — no <code>--auth-profile</code> needed. Passing <code>--auth-profile</code> explicitly <em>binds</em> that host to the profile for next time.</li>
+<li><b>Silent renewal.</b> A cached access token is reused until ~60&nbsp;s before expiry, then renewed with the refresh token. Rotating refresh tokens (Azure AD, Atlassian) are handled: the newest one always replaces the cached one.</li>
+<li><b>Interactive fallback.</b> If renewal fails (revoked/expired refresh token) and <code>auth_interactive</code> is true (default), the browser login starts again by itself. Set <code>auth_interactive: false</code> (or <code>WIKIBRIDGE_AUTH_INTERACTIVE=0</code>) on headless machines: the operation then fails fast with the exact <code>auth login</code> command to run.</li>
+</ul>
+
+<h3>2.3.6&ensp;Login walls during a crawl</h3>
+<p>While a job runs, the HTTP session inspects every response for an <em>authentication wall</em>: HTTP 401; HTTP 403 with a <code>WWW-Authenticate</code> challenge; a redirect that lands on a known IdP host; or an HTML login form (password field on a login-looking URL) served in place of content. When detected:</p>
+<ol>
+<li>the job attempts <strong>one automatic re-login</strong> (max&nbsp;2 per job) — token refresh or browser round-trip — and retries the page;</li>
+<li>if re-login is impossible (no profile, headless, still walled) the job stops in state <code>auth_required</code>, keeps the not-yet-visited pages in its <code>frontier</code>, and prints the recovery hint. After <code>wikibridge auth login &lt;profile&gt;</code> the same job resumes from where it stopped.</li>
+</ol>
+<div class="warnbox"><b>Known issue</b> — in release 0.1, on <em>anonymous</em> imports of public sites the wall detector can trigger on the site's own “Log in” page reached by the crawler and abort the job; see Part&nbsp;VIII, issue&nbsp;#2, for the workaround (<code>--exclude</code> the login page).</div>
+
+<h3>2.3.7&ensp;Procedure — SSO without OAuth (cookie capture)</h3>
+<p>Many intranets only offer a browser SSO form (SAML behind the scenes) and no OAuth client registration. Use a <code>cookie</code> profile:</p>
+<pre>wikibridge auth detect https://intranet.corp.example --save intranet   # kind: sso_form
+wikibridge auth login intranet</pre>
+<ol>
+<li>The browser opens on <code>login_url</code>; complete the SSO login as usual.</li>
+<li>Press <kbd>Enter</kbd> in the terminal. WikiBridge reads the session cookies for the domain <em>directly from your browser's cookie store</em> (Firefox, then Edge, Chrome, Chromium — via <code>browser-cookie3</code>) and saves them in Mozilla <code>cookies.txt</code> format under <code>secrets/cookies/&lt;profile&gt;.txt</code>.</li>
+<li>If no browser store is readable (e.g. Chrome's encrypted store without the right keys), WikiBridge falls back to asking you to paste the <code>Cookie:</code> header manually (copy it from DevTools ▸ Network).</li>
+</ol>
+<div class="note"><b>Note</b> — session cookies expire on the IdP's schedule; when they do, the next import stops in <code>auth_required</code> and a new <code>auth login</code> refreshes the capture.</div>
+
+<h3>2.3.8&ensp;Provider cookbook</h3>
+<table>
+<tr><th>Provider</th><th>One-time admin step</th><th>Profile essentials</th></tr>
+<tr><td>Azure AD / Entra&nbsp;ID</td><td>App registration ▸ <i>Mobile and desktop applications</i> ▸ redirect <code>http://127.0.0.1:8776/callback</code></td><td><code>issuer: https://login.microsoftonline.com/&lt;tenant&gt;/v2.0</code>, <code>client_id</code>, scopes incl. <code>offline_access</code></td></tr>
+<tr><td>Google Workspace</td><td>OAuth credentials of type <i>Desktop app</i></td><td>preset <code>auth_url</code>/<code>token_url</code>; <code>auth_params: {access_type: offline, prompt: consent}</code></td></tr>
+<tr><td>Atlassian Cloud (Confluence)</td><td>OAuth 2.0 (3LO) app on developer.atlassian.com — or skip OAuth and use <code>basic</code> email+API&nbsp;token</td><td>preset endpoints; scopes <code>read:confluence-content.all read:confluence-space.summary offline_access</code>; <code>audience=api.atlassian.com</code></td></tr>
+<tr><td>Okta / Auth0</td><td><i>Native App</i> client with PKCE</td><td><code>issuer: https://&lt;your-tenant&gt;</code> (discovery does the rest)</td></tr>
+<tr><td>Notion</td><td>create an internal integration, share the target pages with it</td><td><code>bearer</code> profile with the integration token</td></tr>
+</table>
+
+<h2 id="p2-ingest">2.4&ensp;Ingesting local documents</h2>
+<pre>wikibridge ingest "D:\contracts\msa-2026.pdf"
+wikibridge ingest "D:\specs" --recursive --no-catalog</pre>
+<ul>
+<li>Supported via <code>markitdown</code>: <code>.pdf .docx .pptx .xlsx .xls .html .htm .csv .json .xml .epub .msg</code>; passed through as-is: <code>.md .markdown .txt .rst</code>. Anything else in a directory scan is silently ignored; a single unsupported file raises an error.</li>
+<li>Per-file cap 50&nbsp;MB; oversized, unconvertible or empty-conversion files are skipped and listed in <code>errors</code> (exit code 1 if any).</li>
+<li>Each document becomes a source with <code>kind: document</code>, <code>url: file:///…</code>, <code>original_path</code> and <code>format</code> in frontmatter; content SHA-256 dedup applies, so re-ingesting an unchanged folder is a no-op.</li>
+</ul>
+
+<h2 id="p2-search">2.5&ensp;Searching, indexing, browsing</h2>
+<pre>wikibridge search "sso token rotation" --limit 10
+wikibridge index          # full FTS rebuild + regenerate index.md</pre>
+<ul>
+<li>Search is SQLite <strong>FTS5</strong> with BM25 ranking and <code>**bold**</code> snippet highlighting; diacritics are folded (<code>unicode61 remove_diacritics 2</code>). Free-form input is safe: every term is internally quoted, so dashes/colons never break the query syntax.</li>
+<li>The index updates incrementally after every import/ingest/catalogue write; <code>wikibridge index</code> is only needed after hand-editing pages on disk.</li>
+<li>Browse the wiki with any Markdown tool: start from <code>wiki/index.md</code> (all pages, by section) or <code>wiki/log.md</code> (chronological audit trail).</li>
+</ul>
+
+<h2 id="p2-catalog">2.6&ensp;LLM cataloguing and the knowledge graph</h2>
+<p>The cataloguer reads every new source, splits it into ~10&nbsp;000-character chunks on paragraph boundaries, asks the brain for structured JSON (<code>entities</code>, <code>concepts</code>, <code>relations</code>), merges partial results by normalised name, and writes/updates pages under <code>entities/</code> and <code>concepts/</code> with a <i>“Menzioni”</i> (mentions) backlink section. Relations are appended to <code>graph/relations.jsonl</code>.</p>
+<h3>The three brain modes (<code>brain_mode</code>)</h3>
+<table>
+<tr><th>Mode</th><th>Who is the LLM</th><th>When work happens</th></tr>
+<tr><td><code>openai_http</code></td><td>LM Studio or any OpenAI-compatible endpoint (<code>lmstudio_url</code>)</td><td>inline during import/ingest, or on demand via <code>catalog-drain</code></td></tr>
+<tr><td><code>agent</code></td><td>the hosting agent itself (Claude Code, Hermes…)</td><td>tasks are queued in <code>_pending/</code>; the agent drains them with <code>catalog-apply</code></td></tr>
+<tr><td><code>none</code></td><td>nobody</td><td>never — imports and FTS still work fully</td></tr>
+</table>
+<h3>Procedures</h3>
+<pre># drain the queue with LM Studio (also used by the GUI button)
+wikibridge catalog-drain
+
+# agent mode: apply one prepared result
+wikibridge catalog-apply sources/payment-api.md \
+    --json '{"entities":[…],"concepts":[…],"relations":[…]}'
+
+# rebuild the graph after cataloguing
+wikibridge graph</pre>
+<p><code>wikibridge graph</code> writes <code>graph/graph.json</code> (nodes = wiki pages, coloured by section; edges = mentions + catalogued relations) and a self-contained <code>graph/graph.html</code> viewer (vis-network from CDN, dark theme) — double-click to explore, no build step.</p>
+
+<h2 id="p2-sync">2.7&ensp;Keeping content fresh: sync and refresh</h2>
+<pre>wikibridge sync imp-0003        # re-check every page of one import job
+wikibridge refresh sources/payment-api.md   # re-fetch a single page</pre>
+<ul>
+<li><b>sync</b> asks the adapter <code>changed_since(revision)</code> for each page of the job and re-downloads only pages whose revision moved (MediaWiki <code>revid</code>, Confluence <code>version</code>, Notion <code>last_edited_time</code>, HTTP <code>ETag/Last-Modified</code>). Unchanged bodies (same SHA-256) are not rewritten.</li>
+<li><b>refresh</b> re-fetches one page using the origin URL and adapter recorded in its frontmatter, re-using the original import's auth profile (or the host-matched one).</li>
+<li>Both honour the same auth machinery as imports, including silent token renewal and the <code>auth_required</code> stop (CLI exit code 2 with a JSON error).</li>
+</ul>
+
+<h2 id="p2-server">2.8&ensp;Running the HTTP server / GUI backend</h2>
+<pre>wikibridge serve       # Flask on http://127.0.0.1:8775</pre>
+<ul>
+<li>Meant for a local GUI (e.g. a Control Center “Knowledge” tab). CORS is enabled; optional bearer auth by setting <code>api_auth_token</code> in <code>config.json</code> (empty = no auth, loopback only — do not expose beyond localhost without a token and a reverse proxy).</li>
+<li><strong>One job at a time</strong>: import/ingest/sync requests return <code>202</code> and run in a background thread; a second concurrent job request gets <code>409</code>. Poll <code>GET /health</code> or <code>GET /imports</code> for live progress (<code>phase</code>, <code>pages</code>, <code>detail</code>).</li>
+<li>Auth profiles over HTTP are <strong>write-only</strong>: the GET endpoint returns names, types and hosts, never secrets.</li>
+<li>Interactive logins can be driven from the GUI: <code>POST /auth/login</code> opens the browser <em>on the server's machine</em> (they are the same machine in the intended setup) and <code>GET /auth/login/status</code> reports the outcome; for cookie profiles call <code>POST /auth/login</code> once to open the browser, then again with <code>{"capture": true}</code> after finishing the SSO login (see Part&nbsp;VIII, issue&nbsp;#8, for release-0.1 caveats).</li>
+<li>For unattended operation prefer <code>auth_interactive: false</code> so background jobs never block waiting for a browser (Part&nbsp;VIII, issues #4/#9).</li>
+</ul>
+<p>Autostart on Windows: add a <code>HKCU\…\Run</code> key or a Task Scheduler entry that launches <code>wikibridge serve</code> in the venv.</p>
+
+<h2 id="p2-skill">2.9&ensp;Agent integration (skill layer)</h2>
+<p>The repository ships a <code>skill/</code> directory (trigger <code>/wiki-import</code>) so coding agents can drive WikiBridge without the venv:</p>
+<pre>python3 /mnt/c/Projects/wikibridge/skill/wikibridgectl.py &lt;command&gt; […]</pre>
+<ul>
+<li><code>wikibridgectl.py</code> forwards any CLI command, adds <code>status</code> (compact JSON: active project, last imports, pending catalogue tasks) and <code>ensure-llmwiki</code> (installs the companion <i>llm-wiki</i> reading skill on Hermes/WSL, OpenClaw and Claude Code runtimes — idempotent).</li>
+<li>In skill context the recommended brain mode is <code>agent</code>: after every import the agent reads each task in <code>_pending/</code>, applies the prompt in <code>skill/prompts/catalog_page.md</code> to the source, and posts the JSON back with <code>catalog-apply</code> — the agent itself is the cataloguing LLM, no external API calls.</li>
+<li>Knowledge answering rule: agents should read <code>wiki/index.md</code> first, then open linked pages, use <code>search</code> for pinpoint queries, and never mix knowledge across projects.</li>
+</ul>
+</div>
+
+<!-- ================================================================ -->
+<!-- PART III                                                          -->
+<!-- ================================================================ -->
+<h1 id="part3">Part III — Configuration Reference</h1>
+<div class="twocol">
+<p>Configuration is a three-layer cascade, applied in order: <strong>dataclass defaults → <code>config.json</code> (repository root) → environment variables</strong> <code>WIKIBRIDGE_&lt;FIELD_UPPERCASE&gt;</code>. Environment values are coerced to the field's type (booleans accept <code>1/true/yes</code>, case-insensitive). An invalid <code>config.json</code> aborts startup with a clear message.</p>
+<pre># config.json example
+{
+  "api_port": 8775,
+  "brain_mode": "agent",
+  "max_pages": 500,
+  "auth_interactive": false
+}
+
+# environment override (PowerShell)
+$env:WIKIBRIDGE_RATE_LIMIT_RPS = "0.5"</pre>
+
+<h2>3.1&ensp;All configuration fields</h2>
+
+<h3>HTTP server (GUI backend)</h3>
+<div class="cfg"><div class="sig">api_host : str = "127.0.0.1"</div><p>Bind address of the Flask server. Keep it on loopback unless you front it with an authenticated reverse proxy.</p></div>
+<div class="cfg"><div class="sig">api_port : int = 8775</div><p>TCP port of the HTTP API.</p></div>
+<div class="cfg"><div class="sig">api_auth_token : str = ""</div><p>If non-empty, every request must send <code>Authorization: Bearer &lt;token&gt;</code>; otherwise a 401 JSON error is returned. Empty (default) disables auth — acceptable only for loopback use.</p></div>
+
+<h3>Data roots</h3>
+<div class="cfg"><div class="sig">data_dir : str = "&lt;repo&gt;/data"</div><p>Root of all project data (registry, wikis, indexes, graphs). Override to move data out of the repository. Accessors: <code>Config.data_path()&nbsp;→&nbsp;Path</code>.</p></div>
+<div class="cfg"><div class="sig">secrets_dir : str = "&lt;repo&gt;/secrets"</div><p>Root of credentials: <code>auth_profiles.json</code>, <code>.tokens.json</code> token cache, <code>cookies/</code>. Accessor: <code>Config.secrets_path()</code>. Exclude from backups/VCS.</p></div>
+
+<h3>Cataloguing brain</h3>
+<div class="cfg"><div class="sig">brain_mode : str = "openai_http"</div><p>One of <code>openai_http</code> (LM Studio / OpenAI-compatible endpoint), <code>agent</code> (queue tasks in <code>_pending/</code> for the hosting agent), <code>none</code> (no cataloguing). See §2.6.</p></div>
+<div class="cfg"><div class="sig">lmstudio_url : str = "http://127.0.0.1:1234/v1"</div><p>Base URL of the OpenAI-compatible endpoint used when <code>brain_mode=openai_http</code>.</p></div>
+<div class="cfg"><div class="sig">lmstudio_model : str = ""</div><p>Model id to request. Empty = first model reported by <code>GET /models</code> (LM Studio's currently loaded model).</p></div>
+<div class="cfg"><div class="sig">brain_max_tokens : int = 3000</div><p>Default <code>max_tokens</code> for each cataloguing completion.</p></div>
+<div class="cfg"><div class="sig">catalog_chunk_chars : int = 10000</div><p>Chunk size (characters) for the map-reduce split of long pages; splits occur on paragraph boundaries.</p></div>
+
+<h3>Import limits (defaults — every import may override)</h3>
+<div class="cfg"><div class="sig">max_depth : int = 2&emsp;·&emsp;hard_max_depth : int = 3</div><p>Default and absolute cap for BFS link depth. Whatever the caller asks, depth is clamped to <code>hard_max_depth</code>.</p></div>
+<div class="cfg"><div class="sig">max_pages : int = 200</div><p>Maximum pages fetched per job. When exceeded, the job is marked <code>truncated</code> and the remaining queue is saved as the resumable <code>frontier</code>.</p></div>
+<div class="cfg"><div class="sig">max_page_mb : float = 2.0&emsp;·&emsp;max_total_mb : float = 200.0</div><p>Per-page and whole-job size budgets. An oversized page is skipped with an error; exceeding the total budget truncates the job.</p></div>
+<div class="cfg"><div class="sig">max_attachments_mb : float = 0.0</div><p>Attachment download budget. <code>0</code> = attachments are never downloaded (current default behaviour).</p></div>
+<div class="cfg"><div class="sig">rate_limit_rps : float = 1.0</div><p>Per-host request rate (token bucket shared by all adapters through the session). Floor 0.05 rps.</p></div>
+<div class="cfg"><div class="sig">request_timeout_s : int = 30</div><p>Default timeout applied to every HTTP request that does not set its own.</p></div>
+<div class="cfg"><div class="sig">respect_robots : bool = true</div><p>Generic crawler only: honour <code>robots.txt</code> (unreachable robots = allowed). API-based adapters are not subject to robots.</p></div>
+<div class="cfg"><div class="sig">max_runtime_min : int = 30</div><p>Wall-clock budget per job; on expiry the job truncates and saves its frontier.</p></div>
+
+<h3>Interactive authentication</h3>
+<div class="cfg"><div class="sig">auth_interactive : bool = true</div><p>Master switch for browser-based logins triggered <em>implicitly</em> (missing/expired token during apply, re-login on a wall). <code>false</code> = headless mode: such situations fail fast with an <code>auth login</code> instruction instead of opening a browser. Env override: <code>WIKIBRIDGE_AUTH_INTERACTIVE</code> (checked at use time by the auth store).</p></div>
+<div class="cfg"><div class="sig">auth_login_timeout_s : int = 300</div><p>How long an interactive OAuth login waits for the browser round-trip before raising <code>TimeoutError</code>.</p></div>
+
+<h3>Miscellaneous</h3>
+<div class="cfg"><div class="sig">user_agent : str = "wikibridge/0.1 (+https://github.com/nuspy)"</div><p>User-Agent for all outbound HTTP, also used for robots.txt matching.</p></div>
+</div>
+
+<!-- ================================================================ -->
+<!-- PART IV                                                           -->
+<!-- ================================================================ -->
+<h1 id="part4">Part IV — Command-Line Reference</h1>
+<div class="twocol">
+<p>Invocation: <code>wikibridge [--project &lt;slug&gt;] &lt;command&gt; […]</code>. The single global option <code>--project</code> selects the target project (default: the active one) and must precede the command. All commands print JSON (single objects use 1-space indentation); progress-bearing commands stream a one-line status to stdout first. Exit codes: <code>0</code> success, <code>1</code> failure/partial failure, <code>2</code> authentication required (sync/refresh).</p>
+
+<h2>4.1&ensp;project — manage projects</h2>
+<div class="cmd"><div class="sig">wikibridge project create &lt;name&gt; [--description TEXT]</div>
+<p>Creates a project; the slug is derived from <code>&lt;name&gt;</code> (lower-case, non-alphanumerics → dashes). Errors if the slug exists. Prints <code>{"created": {…}}</code>.</p></div>
+<div class="cmd"><div class="sig">wikibridge project list</div><p>All projects with metadata; the active one carries <code>"active": true</code>.</p></div>
+<div class="cmd"><div class="sig">wikibridge project switch &lt;slug&gt;</div><p>Sets the active project. Errors if unknown.</p></div>
+<div class="cmd"><div class="sig">wikibridge project delete &lt;slug&gt;</div><p>Unregisters the project (files remain on disk). The <code>default</code> project is protected.</p></div>
+
+<h2>4.2&ensp;import — import an external wiki</h2>
+<div class="cmd"><div class="sig">wikibridge import &lt;url&gt; [--depth N] [--scope page|subtree|space] [--auth-profile NAME] [--adapter auto|generic|mediawiki|confluence|notion] [--max-pages N] [--max-depth N] [--include GLOB]… [--exclude GLOB]… [--no-catalog]</div>
+<table>
+<tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>url</code></td><td>—</td><td>Seed URL. Also decides the auto-detected adapter and (with <code>hosts</code>) the auto-selected auth profile.</td></tr>
+<tr><td><code>--depth</code></td><td>1</td><td>BFS link depth from the seed set; clamped to <code>hard_max_depth</code> (3). <code>0</code> = seeds only.</td></tr>
+<tr><td><code>--scope</code></td><td><code>page</code></td><td>Seed-set strategy; see §2.2.2 per adapter.</td></tr>
+<tr><td><code>--auth-profile</code></td><td>auto by host</td><td>Auth profile name. When given, the URL's host is bound to the profile for future automatic selection.</td></tr>
+<tr><td><code>--adapter</code></td><td><code>auto</code></td><td>Force a source adapter instead of sniffing.</td></tr>
+<tr><td><code>--max-pages</code>, <code>--max-depth</code></td><td>config</td><td>Per-job limit overrides.</td></tr>
+<tr><td><code>--include</code>, <code>--exclude</code></td><td>—</td><td>Repeatable title globs (fnmatch). Include list, when present, is a whitelist; exclude always wins.</td></tr>
+<tr><td><code>--no-catalog</code></td><td>off</td><td>Skip LLM cataloguing for this run.</td></tr>
+</table>
+<p>Output: live progress line, then <code>{id, state, pages, skipped, truncated, errors}</code>. States: <code>done</code>, <code>error</code>, <code>cancelled</code>, <code>auth_required</code> (resumable; see §2.3.6). Exit 0 only for <code>done</code>.</p></div>
+
+<h2>4.3&ensp;sync / refresh — incremental updates</h2>
+<div class="cmd"><div class="sig">wikibridge sync &lt;import-id&gt;</div>
+<p>Re-checks every page of the job (e.g. <code>imp-0003</code>) via <code>changed_since</code> and re-fetches only changed pages. Prints <code>{import_id, checked, refetched}</code>. Exit 2 with a JSON error when authentication is required.</p></div>
+<div class="cmd"><div class="sig">wikibridge refresh &lt;wiki-path&gt;</div>
+<p>Re-fetches one page, e.g. <code>sources/payment-api.md</code>, from its recorded origin (<code>url</code> frontmatter). Prints <code>{path, changed}</code>. Exit 2 on auth walls.</p></div>
+
+<h2>4.4&ensp;ingest — import local documents</h2>
+<div class="cmd"><div class="sig">wikibridge ingest &lt;file|dir&gt; [--recursive] [--no-catalog]</div>
+<p>Converts and imports a document or every supported document in a directory (<code>--recursive</code> descends). Prints <code>{files, imported, skipped, errors}</code>; exit 1 if any error. Formats and caps: §2.4.</p></div>
+
+<h2>4.5&ensp;search / index / graph</h2>
+<div class="cmd"><div class="sig">wikibridge search "&lt;query&gt;" [--limit N]</div><p>FTS5 query (default limit 20). Prints <code>{project, hits: [{path, section, title, snippet}]}</code> ranked by BM25.</p></div>
+<div class="cmd"><div class="sig">wikibridge index</div><p>Full FTS rebuild from disk + regeneration of <code>index.md</code>. Prints <code>{project, pages}</code>.</p></div>
+<div class="cmd"><div class="sig">wikibridge graph</div><p>Regenerates <code>graph/graph.json</code> and <code>graph/graph.html</code>. Prints <code>{project, nodes, edges}</code>.</p></div>
+
+<h2>4.6&ensp;catalog-drain / catalog-apply</h2>
+<div class="cmd"><div class="sig">wikibridge catalog-drain</div><p>Processes every task in <code>_pending/</code> with the HTTP brain (forces <code>openai_http</code>). Prints <code>{done, failed}</code>; successful tasks are deleted from the queue.</p></div>
+<div class="cmd"><div class="sig">wikibridge catalog-apply &lt;source-path&gt; --json '&lt;JSON&gt;'</div>
+<p>Agent-mode companion: applies a prepared cataloguing result (<code>{entities, concepts, relations}</code>) to the given source (e.g. <code>sources/x.md</code>), writes/merges entity &amp; concept pages, appends relations, updates FTS and removes the matching <code>_pending/</code> task. Prints <code>{entities: n, concepts: n}</code>.</p></div>
+
+<h2>4.7&ensp;auth — authentication profiles</h2>
+<div class="cmd"><div class="sig">wikibridge auth add &lt;name&gt; --type none|bearer|basic|header|cookie|oauth2</div>
+<p>Interactive creation. Secret fields (<code>token</code>, <code>password</code>, <code>client_secret</code>, <code>refresh_token</code>) are prompted without echo; every field accepts the <code>env:VAR</code> indirection; optional fields may be left empty. <code>scopes</code> is entered space-separated; <code>redirect_port</code> must be an integer. A final prompt collects optional <code>hosts</code> for automatic profile selection. For <code>oauth2</code>/<code>cookie</code> the output includes the suggested next step (<code>auth login &lt;name&gt;</code>).</p>
+<table>
+<tr><th>Type</th><th>Prompted fields (⭘ = optional)</th></tr>
+<tr><td>bearer</td><td>token</td></tr>
+<tr><td>basic</td><td>username, password</td></tr>
+<tr><td>header</td><td>name, value</td></tr>
+<tr><td>cookie</td><td>cookies⭘, domain⭘, login_url⭘</td></tr>
+<tr><td>oauth2</td><td>issuer⭘, auth_url⭘, token_url⭘, client_id, client_secret⭘, scopes⭘, redirect_port⭘, refresh_token⭘</td></tr>
+</table></div>
+<div class="cmd"><div class="sig">wikibridge auth list</div><p>Names, types and bound hosts — never secrets.</p></div>
+<div class="cmd"><div class="sig">wikibridge auth remove &lt;name&gt;</div><p>Deletes the profile (cached tokens in <code>.tokens.json</code> are not purged).</p></div>
+<div class="cmd"><div class="sig">wikibridge auth login &lt;name&gt; [--no-browser]</div>
+<p>Interactive login for <code>oauth2</code> (PKCE browser flow, §2.3.4) and <code>cookie</code> (browser cookie capture, §2.3.7) profiles. <code>--no-browser</code> prints the authorization URL instead of opening the browser. Output: <code>{profile, type, logged_in, …}</code> plus a warning note when no refresh token was granted. Errors: unusable profile type, timeout, IdP refusal, state mismatch, busy redirect port.</p></div>
+<div class="cmd"><div class="sig">wikibridge auth detect &lt;url&gt; [--save NAME]</div>
+<p>Probes the URL anonymously and classifies its protection (§2.3.3). With <code>--save</code>, stores the suggested profile — prompting for <code>client_id</code> (oauth) or credentials (basic) as needed — and reports the recommended follow-up command.</p></div>
+
+<h2>4.8&ensp;serve / skill</h2>
+<div class="cmd"><div class="sig">wikibridge serve</div><p>Starts the Flask HTTP API (Part&nbsp;V) in the foreground, threaded, with INFO logging.</p></div>
+<div class="cmd"><div class="sig">wikibridge skill ensure-llmwiki</div><p>Runs <code>scripts/ensure_llmwiki.py</code>: verifies/installs the companion <i>llm-wiki</i> skill on Hermes (WSL), OpenClaw and Claude Code. Prints one JSON status per runtime; exit 0 when every runtime is <code>ok/installed/skipped</code>.</p></div>
+
+<h2>4.9&ensp;wikibridgectl.py extras (agent wrapper)</h2>
+<div class="cmd"><div class="sig">wikibridgectl.py status [--project slug]</div><p>Compact JSON: active project, project list, last 5 imports (<code>id/url/state/pages</code>), pending catalogue tasks, path of <code>index.md</code>.</p></div>
+<div class="cmd"><div class="sig">wikibridgectl.py &lt;any CLI command&gt;</div><p>Forwards to the package using the repo venv when available, else the current interpreter with the repo on <code>sys.path</code>. Note: <code>--project</code> may be given after the command — the wrapper moves it to the front.</p></div>
+</div>
+
+<!-- ================================================================ -->
+<!-- PART V                                                            -->
+<!-- ================================================================ -->
+<h1 id="part5">Part V — HTTP API Reference</h1>
+<div class="twocol">
+<p>Base URL <code>http://127.0.0.1:8775</code> (configurable). All bodies are JSON unless stated; all responses are JSON. When <code>api_auth_token</code> is set, send <code>Authorization: Bearer &lt;token&gt;</code> on every request (401 otherwise; CORS pre-flight <code>OPTIONS</code> is exempt). Endpoints that accept a <code>project</code> parameter read it from the query string, the JSON body or the form field, in that order; omitted = active project.</p>
+<p><b>Job model.</b> Import, ingest and sync run in a single background slot. Starting one returns <code>202 {"started": true}</code>; if the slot is busy you get <code>409 {"error": "un altro job è in corso"}</code>. The current job's live state (<code>running, kind, phase, pages, max_pages, detail, error, result</code>) is embedded in <code>GET /health</code> and <code>GET /imports</code>.</p>
+
+<h2>5.1&ensp;Service</h2>
+<div class="ep"><div class="sig"><span class="tag get">GET</span> /health</div>
+<p>Liveness + context: <code>{ok: true, active_project, job}</code>.</p></div>
+
+<h2>5.2&ensp;Projects</h2>
+<div class="ep"><div class="sig"><span class="tag get">GET</span> /projects</div><p>Array of projects; the active one has <code>"active": true</code>.</p></div>
+<div class="ep"><div class="sig"><span class="tag post">POST</span> /projects&emsp;<span class="small">{name, description?}</span></div><p><code>201</code> with the created project; <code>409</code> if the slug exists.</p></div>
+<div class="ep"><div class="sig"><span class="tag del">DELETE</span> /projects/&lt;slug&gt;</div><p>Unregisters the project (files preserved); <code>400</code> for unknown slug or <code>default</code>.</p></div>
+<div class="ep"><div class="sig"><span class="tag post">POST</span> /projects/&lt;slug&gt;/activate</div><p>Sets the active project; <code>404</code> if unknown.</p></div>
+
+<h2>5.3&ensp;Imports</h2>
+<div class="ep"><div class="sig"><span class="tag post">POST</span> /imports&emsp;<span class="small">{url, project?, depth?, scope?, auth_profile?, adapter?, max_pages?, max_depth?, max_total_mb?, rate_limit_rps?, include?, exclude?, no_catalog?}</span></div>
+<p>Starts an import job (parameters mirror the CLI, §4.2; <code>include/exclude</code> are arrays). <code>202</code> or <code>409</code>. The job outcome — including <code>state: "auth_required"</code> — is read from the job record.</p></div>
+<div class="ep"><div class="sig"><span class="tag get">GET</span> /imports?project=…</div><p><code>{project, job, imports: […]}</code> — full history from <code>imports.json</code> plus the live job state.</p></div>
+<div class="ep"><div class="sig"><span class="tag get">GET</span> /imports/&lt;import-id&gt;?project=…</div><p>One job record; <code>404</code> if unknown.</p></div>
+<div class="ep"><div class="sig"><span class="tag post">POST</span> /imports/&lt;import-id&gt;/cancel</div><p>Signals cancellation of the <em>current</em> job slot (the id is informational). Returns <code>{cancelling: true}</code>; the job ends in state <code>cancelled</code>.</p></div>
+<div class="ep"><div class="sig"><span class="tag post">POST</span> /imports/&lt;import-id&gt;/sync&emsp;<span class="small">{project?}</span></div><p>Starts an incremental sync of that job in the background slot. <code>202</code>/<code>409</code>.</p></div>
+
+<h2>5.4&ensp;Document ingest</h2>
+<div class="ep"><div class="sig"><span class="tag post">POST</span> /ingest&emsp;<span class="small">multipart/form-data: file, project?</span></div>
+<p>Uploads one document to a temp dir and ingests it in the background slot. <code>400</code> without a file; <code>202</code>/<code>409</code> otherwise.</p></div>
+<div class="ep"><div class="sig"><span class="tag post">POST</span> /ingest/dir&emsp;<span class="small">{path, recursive?=true, project?}</span></div>
+<p>Ingests a directory <em>on the server's filesystem</em>. <code>400</code> if the path does not exist.</p></div>
+
+<h2>5.5&ensp;Meetings</h2>
+<div class="ep"><div class="sig"><span class="tag post">POST</span> /meetings&emsp;<span class="small">{project?, meeting_id?, title?, date?, source?, participants?, summary?, highlights?, agreements?, tasks?, transcript_path?}</span></div>
+<p>Writes a meeting page (sections <i>Contenuto / Accordi / Attività</i>), indexes it, logs it and rebuilds <code>index.md</code>. <code>201 {path}</code>. Intended for meeting-bot integrations; <code>highlights</code> = <code>[{title, summary}]</code>, <code>agreements</code> = <code>[{title, detail}]</code>, <code>tasks</code> = <code>[{assignee, task}]</code>.</p></div>
+
+<h2>5.6&ensp;Wiki, search, graph, catalogue</h2>
+<div class="ep"><div class="sig"><span class="tag get">GET</span> /wiki/tree?project=…</div><p><code>{project, tree: {section: [{file, title, updated}]}}</code> for building a browser UI.</p></div>
+<div class="ep"><div class="sig"><span class="tag get">GET</span> /wiki/page?path=sources/x.md&amp;project=…</div><p><code>{path, frontmatter, body}</code>; <code>404</code> for missing/out-of-tree paths (path traversal is blocked).</p></div>
+<div class="ep"><div class="sig"><span class="tag post">POST</span> /wiki/refresh&emsp;<span class="small">{path, project?}</span></div><p>Synchronous single-page refresh (§4.3). <code>400</code> on errors.</p></div>
+<div class="ep"><div class="sig"><span class="tag get">GET</span> /search?q=…&amp;project=…</div><p><code>{project, hits}</code> — same shape as the CLI.</p></div>
+<div class="ep"><div class="sig"><span class="tag get">GET</span> /graph?project=…</div><p>Rebuilds and returns the graph: <code>{nodes, edges, graph, html_path}</code>.</p></div>
+<div class="ep"><div class="sig"><span class="tag post">POST</span> /catalog/drain&emsp;<span class="small">{project?}</span></div><p>Synchronously drains <code>_pending/</code> with the HTTP brain. <code>{done, failed}</code>.</p></div>
+
+<h2>5.7&ensp;Skill management</h2>
+<div class="ep"><div class="sig"><span class="tag get">GET</span> /skill/status&emsp;·&emsp;<span class="tag post">POST</span> /skill/install</div>
+<p>Both run the idempotent <code>ensure_llmwiki</code> installer and return <code>{results: [per-runtime status], ok}</code>.</p></div>
+
+<h2>5.8&ensp;Authentication profiles &amp; interactive login</h2>
+<div class="ep"><div class="sig"><span class="tag get">GET</span> /auth/profiles</div><p>Write-only store: returns <code>[{name, type, hosts}]</code>, never secrets.</p></div>
+<div class="ep"><div class="sig"><span class="tag post">POST</span> /auth/profiles&emsp;<span class="small">{name, type, …fields}</span></div><p>Creates/replaces a profile. <code>201</code>; <code>400</code> for a missing name or invalid type.</p></div>
+<div class="ep"><div class="sig"><span class="tag del">DELETE</span> /auth/profiles/&lt;name&gt;</div><p>Removes the profile.</p></div>
+<div class="ep"><div class="sig"><span class="tag post">POST</span> /auth/detect&emsp;<span class="small">{url}</span></div><p>Runs protection detection (§2.3.3) and returns the classification + suggested profile skeleton. <code>502</code> when the probe itself fails.</p></div>
+<div class="ep"><div class="sig"><span class="tag post">POST</span> /auth/login&emsp;<span class="small">{name, capture?}</span></div>
+<p>Starts an interactive login in a background thread; the browser opens <em>on the server's machine</em>. <code>202 {started, profile, note}</code>; <code>409</code> if a login is already running; <code>400</code> without a name. For cookie profiles: first call opens the browser; after completing the SSO login, call again with <code>{"capture": true}</code> to grab the cookies. See Part&nbsp;VIII (#8, #10) for release-0.1 concurrency and timing caveats.</p></div>
+<div class="ep"><div class="sig"><span class="tag get">GET</span> /auth/login/status</div>
+<p>State of the last login: <code>{running, profile, ok, error, result}</code>. Poll until <code>running</code> is false, then inspect <code>ok</code>.</p></div>
+</div>
+
+<!-- ================================================================ -->
+<!-- PART VI                                                           -->
+<!-- ================================================================ -->
+<h1 id="part6">Part VI — Python Module Reference</h1>
+<div class="twocol">
+<p>This part documents every module of the <code>wikibridge</code> package plus the two auxiliary scripts. For each symbol: full signature, parameter-by-parameter description, return value, raised exceptions and behavioural notes. Symbols are importable as <code>from wikibridge.&lt;module&gt; import &lt;name&gt;</code>.</p>
+
+<h2 id="m-config">6.1&ensp;wikibridge.config — configuration cascade</h2>
+<p>Defines the <code>Config</code> dataclass and the loader. Module constants: <code>REPO_DIR</code> (repository root, computed from the package location) and <code>CONFIG_PATH</code> (<code>REPO_DIR/config.json</code>).</p>
+<div class="fn"><div class="sig">Config<span class="tag cls">class</span></div>
+<p>Plain dataclass holding every setting listed in Part&nbsp;III. Two helper accessors:</p>
+<ul><li><code>data_path() → Path</code> — <code>data_dir</code> as a <code>Path</code>.</li>
+<li><code>secrets_path() → Path</code> — <code>secrets_dir</code> as a <code>Path</code>.</li></ul></div>
+<div class="fn"><div class="sig">load_config(path: Path | None = None) → Config<span class="tag func">function</span></div>
+<p>Builds the effective configuration: defaults ← <code>config.json</code> ← environment (<code>WIKIBRIDGE_&lt;FIELD&gt;</code>, type-coerced).</p>
+<table><tr><th>Param</th><th>Description</th></tr>
+<tr><td><code>path</code></td><td>Alternative JSON file; default <code>CONFIG_PATH</code>. Missing file = defaults only.</td></tr></table>
+<p><b>Raises</b> <code>SystemExit</code> when the JSON file exists but is malformed.</p></div>
+
+<h2 id="m-projects">6.2&ensp;wikibridge.projects — project registry</h2>
+<p>Knowledge isolation layer. Registry file <code>data/projects.json</code>: <code>{"active": slug, "projects": {slug: {name, description, created}}}</code>. Constants: <code>DEFAULT_SLUG = "default"</code>, <code>WIKI_SECTIONS = ("sources","entities","concepts","syntheses","meetings")</code>.</p>
+<div class="fn"><div class="sig">slugify(name: str) → str<span class="tag func">function</span></div>
+<p>Lower-cases, replaces every non <code>[a-z0-9-]</code> run with a dash, trims dashes. Empty result → <code>"progetto"</code>.</p></div>
+<div class="fn"><div class="sig">Project<span class="tag cls">dataclass</span></div>
+<p>Fields: <code>slug</code>, <code>name</code>, <code>description</code>, <code>created</code> (UTC ISO), <code>root: Path</code>. Path properties (all under <code>root</code>): <code>wiki_dir</code>, <code>graph_dir</code>, <code>pending_dir</code> (<code>_pending/</code>), <code>index_db</code>, <code>imports_json</code>.</p>
+<ul>
+<li><code>ensure_layout()</code> — idempotently creates root, graph, pending and every wiki section directory.</li>
+<li><code>to_dict() → dict</code> — JSON-safe metadata (no paths).</li>
+</ul></div>
+<div class="fn"><div class="sig">ProjectStore(cfg: Config)<span class="tag cls">class</span></div>
+<p>Thread-safe CRUD over the registry (a lock guards every read-modify-write; registry writes are atomic via temp-file replace).</p>
+<ul>
+<li><code>list() → list[Project]</code> — all projects, slug-sorted.</li>
+<li><code>get(slug=None) → Project</code> — by slug, or the active one; auto-creates <code>default</code> when it is the target and missing; always calls <code>ensure_layout()</code>. <b>Raises</b> <code>KeyError</code> for unknown slugs.</li>
+<li><code>create(name, description="") → Project</code> — registers, creates layout, snapshots <code>project.json</code>. <b>Raises</b> <code>ValueError</code> on duplicate slug.</li>
+<li><code>activate(slug) → Project</code> — sets active. <b>Raises</b> <code>KeyError</code>.</li>
+<li><code>active_slug() → str</code> — current active slug.</li>
+<li><code>delete(slug) → None</code> — unregisters; resets active to <code>default</code> if needed; never touches files. <b>Raises</b> <code>ValueError</code> (<code>default</code>), <code>KeyError</code>.</li>
+</ul></div>
+
+<h2 id="m-limits">6.3&ensp;wikibridge.limits — budgets &amp; rate limiting</h2>
+<div class="fn"><div class="sig">ImportLimits<span class="tag cls">dataclass</span></div>
+<p>Per-job bundle of every cap: <code>max_depth, max_pages, max_page_mb, max_total_mb, max_attachments_mb, rate_limit_rps, request_timeout_s, respect_robots, max_runtime_min, include, exclude</code> (title globs).</p>
+<ul>
+<li><code>from_config(cfg, **overrides) → ImportLimits</code> <span class="tag meth">classmethod</span> — starts from the config defaults, applies non-<code>None</code> overrides (<b>raises</b> <code>ValueError</code> for unknown names), then clamps <code>max_depth</code> to <code>cfg.hard_max_depth</code>.</li>
+<li><code>title_allowed(title_or_path) → bool</code> — include list (if any) must match; any exclude match rejects. fnmatch semantics.</li>
+<li><code>to_dict() → dict</code> — serialisation stored inside each job record.</li>
+</ul></div>
+<div class="fn"><div class="sig">RateLimiter(rps: float)<span class="tag cls">class</span></div>
+<p>Per-host token bucket shared by the whole session; <code>rps</code> floored at 0.05.</p>
+<ul><li><code>wait(host) → None</code> — blocks (1&nbsp;s sleep slices) until the host's next slot; thread-safe.</li></ul></div>
+
+<h2 id="m-http">6.4&ensp;wikibridge.http — shared HTTP session</h2>
+<div class="fn"><div class="sig">ThrottledSession(limiter, timeout_s, user_agent)<span class="tag cls">class (requests.Session)</span></div>
+<p>The single choke point of all adapter traffic. Configures: User-Agent; urllib3 <code>Retry(total=3, backoff 1.5×)</code> on 429/5xx honouring <code>Retry-After</code>; mounted on both schemes.</p>
+<ul>
+<li><b>Attribute</b> <code>guard_auth: bool = False</code> — when the importer flips it on, every response is screened with <code>oauth.looks_like_auth_wall()</code> and a positive match raises <code>AuthRequiredError</code>; requests whose path ends in <code>/robots.txt</code> are exempt.</li>
+<li><code>request(method, url, **kwargs)</code> <span class="tag meth">override</span> — waits on the per-host rate limiter, injects the default timeout when the caller sets none, performs the request, then applies the guard. All keyword arguments of <code>requests</code> remain available.</li>
+</ul></div>
+<div class="fn"><div class="sig">make_session(cfg: Config, limits: ImportLimits) → ThrottledSession<span class="tag func">function</span></div>
+<p>Factory wiring a fresh session to a <code>RateLimiter(limits.rate_limit_rps)</code>, <code>limits.request_timeout_s</code> and <code>cfg.user_agent</code>.</p></div>
+
+<h2 id="m-auth">6.5&ensp;wikibridge.auth — auth profiles, tokens, interactive login</h2>
+<p>Storage: <code>secrets/auth_profiles.json</code> (<code>{"profiles": {name: profile}}</code>), token cache <code>secrets/.tokens.json</code>, captured cookies <code>secrets/cookies/&lt;name&gt;.txt</code>. Constant <code>AUTH_TYPES = ("none","bearer","basic","header","cookie","oauth2")</code>.</p>
+<div class="fn"><div class="sig">AuthRequiredError(url, reason)<span class="tag exc">exception</span></div>
+<p><code>RuntimeError</code> subclass meaning “the source demands (re-)authentication”. Attributes <code>url</code> and <code>reason</code>; message <i>"autenticazione richiesta per &lt;url&gt;: &lt;reason&gt;"</i>. Raised by the session guard, by <code>apply_profile</code> on unusable profiles, and surfaced to CLI/API as state <code>auth_required</code> / exit code 2.</p></div>
+<div class="fn"><div class="sig">_resolve(value: str) → str<span class="tag func">helper</span></div>
+<p>Implements the <code>env:VAR</code> indirection (§2.3.2). <b>Raises</b> <code>RuntimeError</code> when the variable is missing. Non-<code>env:</code> values pass through.</p></div>
+<div class="fn"><div class="sig">AuthProfileStore(cfg: Config)<span class="tag cls">class</span></div>
+<p>The façade every other module uses. Grouped by concern:</p>
+<h4>Profile CRUD</h4>
+<ul>
+<li><code>names() → list[dict]</code> — <code>[{name, type, hosts}]</code>, secret-free (feeds the GUI).</li>
+<li><code>get(name) → dict</code> — raw profile. <b>Raises</b> <code>KeyError</code>.</li>
+<li><code>set(name, profile) → None</code> — validates <code>profile["type"]</code> against <code>AUTH_TYPES</code> (<b>raises</b> <code>ValueError</code>), persists.</li>
+<li><code>remove(name) → None</code> — idempotent delete.</li>
+</ul>
+<h4>Automatic selection by host</h4>
+<ul>
+<li><code>find_for(url) → str | None</code> — first profile (name-sorted) whose <code>hosts</code> entry equals the URL host or is a parent-domain suffix of it.</li>
+<li><code>bind_host(name, url) → None</code> — appends the URL's host to the profile's <code>hosts</code> (case-insensitive dedup), enabling future automatic selection.</li>
+</ul>
+<h4>Application to a session</h4>
+<ul>
+<li><code>apply_profile(session, name | None) → None</code> — no-op for <code>None</code>/type <code>none</code>; otherwise configures the session per type (bearer header, basic tuple, custom header, cookie jar, or OAuth bearer via <code>_oauth2_token</code>). <b>Raises</b> <code>KeyError</code> (unknown profile), <code>AuthRequiredError</code> (cookie profile with nothing captured yet; OAuth with no obtainable token in headless mode).</li>
+<li><code>_apply_cookies(session, prof)</code> <span class="tag meth">helper</span> — loads a Mozilla <code>cookies.txt</code> file when <code>prof["cookies"]</code> is an existing path, else parses a literal <code>"k=v; k2=v2"</code> string.</li>
+</ul>
+<h4>OAuth token lifecycle</h4>
+<ul>
+<li><code>_load_tokens() → dict</code> / <code>_store_tokens(name, tok, fallback_refresh="") → str</code> — cache entries <code>{access_token, expires_at, refresh_token}</code>; the newest refresh token always wins (rotation support), falling back to the previous one when the IdP omits it. Returns the access token.</li>
+<li><code>_interactive_ok() → bool</code> — env <code>WIKIBRIDGE_AUTH_INTERACTIVE</code> overrides <code>cfg.auth_interactive</code>.</li>
+<li><code>_oauth2_token(name, prof) → str</code> — the resolution ladder: (1) cached access token still valid &gt;60&nbsp;s → use it; (2) refresh grant with cached-or-profile refresh token → store &amp; use; (3) interactive browser login when allowed; otherwise <b>raises</b> <code>AuthRequiredError</code> with the exact CLI hint.</li>
+<li><code>_browser_login(prof) → dict</code> <span class="tag meth">helper</span> — <code>oauth.interactive_login</code> wired to config timeout and <code>env:</code> resolver.</li>
+</ul>
+<h4>Interactive entry points</h4>
+<ul>
+<li><code>login(name, *, open_browser=True, wait_for_user=True, capture_only=False) → dict</code> — the <code>auth login</code> engine. <code>oauth2</code>: full PKCE flow, stores tokens, returns <code>{profile, type, logged_in, refresh_token, expires_in, note}</code>. <code>cookie</code>: delegates to <code>_login_cookie</code>; <code>capture_only=True</code> skips browser+wait and captures immediately (server two-phase flow). <b>Raises</b> <code>ValueError</code> for other types.</li>
+<li><code>_login_cookie(name, prof, *, open_browser, wait_for_user) → dict</code> <span class="tag meth">helper</span> — opens <code>login_url</code> (default <code>https://&lt;domain&gt;/</code>), optionally waits for <kbd>Enter</kbd> (TTY only), then captures via <code>_cookies_from_browser</code>; writes Mozilla-format <code>secrets/cookies/&lt;name&gt;.txt</code> and points the profile at it. Fallbacks: manual <code>Cookie:</code> header paste (TTY), else <code>AuthRequiredError</code> with instructions. Requires <code>domain</code> or a <code>hosts</code> entry (<b>raises</b> <code>ValueError</code> otherwise).</li>
+<li><code>_cookies_from_browser(domain) → CookieJar | None</code> <span class="tag meth">static helper</span> — tries Firefox, Edge, Chrome, Chromium stores through the optional <code>browser_cookie3</code> dependency; first non-empty jar wins; every per-browser failure is logged at DEBUG and swallowed.</li>
+<li><code>reauth(session, name) → bool</code> — mid-job re-authentication: for <code>oauth2</code> invalidates the cached access token and re-runs the ladder; for <code>cookie</code> reruns the capture and reloads the jar. Returns <code>False</code> when interactivity is disabled or the type has no interactive path.</li>
+</ul></div>
+<div class="fn"><div class="sig">auth_cli(cfg, args) → int<span class="tag func">function</span></div>
+<p>Implements the <code>auth</code> sub-commands (list/add/remove/login/detect) over the store; interactive prompting rules as in §4.7 (module tables <code>_FIELDS_BY_TYPE</code>, <code>_SECRET_FIELDS</code>, <code>_OPTIONAL_FIELDS</code>; helper <code>_prompt_profile(auth_type) → dict</code>).</p></div>
+
+<h2 id="m-oauth">6.6&ensp;wikibridge.oauth — PKCE flow &amp; protection detection</h2>
+<p>Self-contained (imports nothing from the rest of the package). Constants: <code>DEFAULT_REDIRECT_PORT = 8776</code>, <code>DEFAULT_SCOPES = ["openid","profile","email","offline_access"]</code>, IdP host tables (<code>_IDP_EXACT/_IDP_SUFFIXES/_IDP_PREFIXES</code>) and login-page heuristics (<code>_LOGIN_HINTS</code>, <code>_PASSWORD_INPUT</code>).</p>
+<div class="fn"><div class="sig">looks_like_auth_wall(resp) → str | None<span class="tag func">function</span></div>
+<p>Classifies a <code>requests.Response</code> as an authentication wall. Returns a human-readable reason, or <code>None</code>. Positive cases: HTTP&nbsp;401; HTTP&nbsp;403 with <code>WWW-Authenticate</code>; a redirect chain ending on a different host recognised as an IdP; an HTML page whose final URL looks login-related <em>and</em> whose first 200&nbsp;kB contain a password input.</p></div>
+<div class="fn"><div class="sig">discover(issuer: str) → dict<span class="tag func">function</span></div>
+<p>Fetches <code>&lt;issuer&gt;/.well-known/openid-configuration</code> (20&nbsp;s timeout). <b>Raises</b> <code>requests.HTTPError</code> on failure.</p></div>
+<div class="fn"><div class="sig">endpoints_for(prof, resolve=identity) → (auth_url, token_url)<span class="tag func">function</span></div>
+<p>Resolution order: explicit <code>auth_url</code>+<code>token_url</code> → <code>token_url</code> alone (legacy refresh-only profiles; empty auth_url) → OIDC discovery on <code>issuer</code>. <b>Raises</b> <code>ValueError</code> when none is available. <code>resolve</code> is the <code>env:</code> indirection hook.</p></div>
+<div class="fn"><div class="sig">interactive_login(prof, *, resolve=identity, open_browser=True, timeout_s=300) → dict<span class="tag func">function</span></div>
+<p>Runs the Authorization Code + PKCE flow end to end and returns the IdP's token JSON (<code>access_token</code>, usually <code>refresh_token</code>, <code>expires_in</code>…).</p>
+<table><tr><th>Param</th><th>Description</th></tr>
+<tr><td><code>prof</code></td><td>oauth2 profile; uses <code>client_id</code> (required), <code>client_secret?</code>, <code>scopes?</code> (list or space-separated string; default <code>DEFAULT_SCOPES</code>), <code>redirect_port?</code>, <code>auth_params?</code> (extra query params merged into the authorization request — e.g. Atlassian's <code>audience</code>/<code>prompt</code>).</td></tr>
+<tr><td><code>resolve</code></td><td>Secret-indirection resolver (pass <code>auth._resolve</code>).</td></tr>
+<tr><td><code>open_browser</code></td><td><code>False</code> = print the URL only.</td></tr>
+<tr><td><code>timeout_s</code></td><td>Max wait for the browser round-trip.</td></tr></table>
+<p><b>Mechanics</b>: S256 code challenge from a <code>secrets.token_urlsafe(64)</code> verifier; random <code>state</code>; loopback <code>HTTPServer</code> on <code>127.0.0.1:&lt;port&gt;</code> answering only <code>/callback</code> (404 elsewhere, e.g. favicon) with a styled success/failure page; 1&nbsp;s accept loop until callback or deadline.</p>
+<p><b>Raises</b>: <code>RuntimeError</code> (busy port, IdP <code>error=…</code>, state mismatch, non-2xx token exchange with the response excerpt), <code>TimeoutError</code> (no callback), <code>ValueError</code> (no authorization endpoint derivable).</p></div>
+<div class="fn"><div class="sig">refresh_grant(prof, refresh_token, *, resolve=identity) → dict<span class="tag func">function</span></div>
+<p>Plain <code>grant_type=refresh_token</code> POST to the token endpoint (adds <code>client_secret</code> only when present). <b>Raises</b> <code>requests.HTTPError</code> on rejection — callers treat that as “refresh token dead”.</p></div>
+<div class="fn"><div class="sig">detect_protection(url, user_agent="wikibridge") → dict<span class="tag func">function</span></div>
+<p>One anonymous GET, then classification (§2.3.3). Return keys: <code>url, final_url, status, kind (open|basic|oauth|sso_form), wall?, provider?, profile?, note</code>. The suggested <code>profile</code> is ready for <code>AuthProfileStore.set()</code> apart from blanks the caller must fill (<code>client_id</code>, basic credentials).</p></div>
+<div class="fn"><div class="sig">_preset_for_idp(host, location_url) → dict | None<span class="tag func">helper</span></div>
+<p>Provider presets for Azure&nbsp;AD (tenant parsed from the redirect URL), Google, Atlassian, Okta, Auth0 — endpoints/issuer, scopes, <code>auth_params</code> and an admin note. <code>None</code> for unrecognised hosts.</p></div>
+</div>
+
+<div class="twocol">
+<h2 id="m-adapters">6.7&ensp;wikibridge.adapters — source adapters</h2>
+
+<h3>6.7.1&ensp;adapters.base — the contract</h3>
+<div class="fn"><div class="sig">PageRef<span class="tag cls">dataclass</span></div>
+<p>A page to visit: <code>id</code> (adapter-native identifier — MediaWiki title, Confluence content id, Notion page id, or the URL itself), <code>url</code>, <code>title=""</code>, <code>depth=0</code> (BFS distance from the seed).</p></div>
+<div class="fn"><div class="sig">PageContent<span class="tag cls">dataclass</span></div>
+<p>A fetched page: <code>ref: PageRef</code>, <code>markdown: str</code>, <code>links: list[PageRef]</code> (same-wiki outlinks for the BFS), <code>revision: str | None</code> (sync anchor), <code>attachments: list[dict]</code> (reserved; not downloaded in 0.1).</p></div>
+<div class="fn"><div class="sig">SourceAdapter(session, limits)<span class="tag cls">abstract class</span></div>
+<p>Every adapter receives the shared <code>ThrottledSession</code> and the job's <code>ImportLimits</code>; it must never bypass either.</p>
+<ul>
+<li><code>detect(url, session) → bool</code> <span class="tag meth">classmethod</span> — cheap sniffing: “does this URL belong to my wiki type?”. Base returns <code>False</code>.</li>
+<li><code>resolve(url, scope) → list[PageRef]</code> <span class="tag meth">abstract</span> — builds the seed set for <code>page|subtree|space</code> and initialises adapter state (API endpoint, scope prefix…). Must be called before <code>fetch</code>.</li>
+<li><code>fetch(ref) → PageContent</code> <span class="tag meth">abstract</span> — downloads and converts one page.</li>
+<li><code>changed_since(ref, revision) → bool</code> — return <code>False</code> only when the page provably did <em>not</em> change; base implementation returns <code>True</code> (always re-fetch).</li>
+</ul></div>
+
+<h3>6.7.2&ensp;adapters.detect_adapter — selection</h3>
+<div class="fn"><div class="sig">detect_adapter(url, session, limits, *, forced="auto") → SourceAdapter<span class="tag func">function</span></div>
+<p>Builds the adapter registry (specialised adapters are imported defensively — a missing optional dependency simply removes that adapter), then: <code>forced≠"auto"</code> → instantiate that class (<b>raises</b> <code>KeyError</code> if unavailable); otherwise probes <code>notion → confluence → mediawiki</code> (most specific first) and falls back to <code>GenericAdapter</code>, whose <code>detect</code> always returns <code>True</code>.</p></div>
+
+<h3>6.7.3&ensp;adapters.generic — universal HTML crawler</h3>
+<div class="fn"><div class="sig">GenericAdapter<span class="tag cls">class</span></div>
+<p>For GitHub wikis, GitBook, DokuWiki, documentation sites — anything without a usable API. Skips binary/static extensions (<code>_SKIP_EXT</code>: images, archives, media, css/js…). JavaScript-rendered pages are <em>not</em> supported (no headless browser in 0.1).</p>
+<ul>
+<li><code>resolve(url, scope)</code> — seed is always just the URL; scope shapes the crawl fence: <code>page</code> → same host; <code>subtree</code> → same host + path prefix of the seed's directory; <code>space</code> → whole host. Returns <code>[PageRef(depth=0)]</code>.</li>
+<li><code>_in_scope(url) → bool</code> <span class="tag meth">helper</span> — host match + extension filter + path-prefix check; applied to every extracted link.</li>
+<li><code>_allowed_by_robots(url) → bool</code> <span class="tag meth">helper</span> — per-host cached <code>robots.txt</code> (fetched through the throttled session; unreachable/non-200 = allow) matched against the configured User-Agent. Disabled by <code>limits.respect_robots=False</code>.</li>
+<li><code>fetch(ref)</code> — robots check (<b>raises</b> <code>PermissionError</code> when disallowed), GET, <code>raise_for_status()</code>, content-type must contain <code>html</code>/<code>xml</code> (<b>raises</b> <code>ValueError</code>), size cap, then <code>html_to_markdown</code>; links via <code>extract_links</code> filtered by <code>_in_scope</code>; revision = <code>ETag</code> or <code>Last-Modified</code>.</li>
+<li><code>changed_since(ref, revision)</code> — HEAD request compared against the stored validator; any failure → <code>True</code> (re-fetch).</li>
+</ul></div>
+
+<h3>6.7.4&ensp;adapters.mediawiki — MediaWiki action API</h3>
+<div class="fn"><div class="sig">MediaWikiAdapter<span class="tag cls">class</span></div>
+<p>Speaks to <code>api.php</code> (candidates probed: <code>/w/api.php</code>, <code>/api.php</code>, <code>/mediawiki/api.php</code>). Every call sends <code>maxlag=5</code> (wiki etiquette); 429/5xx are retried by the session.</p>
+<ul>
+<li><code>detect(url, session)</code> <span class="tag meth">classmethod</span> — URL must look like a wiki path (<code>/wiki/…</code> or <code>index.php?title=…</code>) <em>and</em> a candidate <code>api.php</code> must answer a <code>siteinfo</code> query.</li>
+<li><code>_ensure_api(url)</code> / <code>_call(**params)</code> <span class="tag meth">helpers</span> — endpoint discovery with caching (<b>raises</b> <code>RuntimeError</code> when no api.php answers) and JSON call wrapper that surfaces MediaWiki-level errors (<b>raises</b> <code>RuntimeError</code> with the API's <code>info</code> message).</li>
+<li><code>_title_from_url(url)</code> / <code>_page_url(title)</code> <span class="tag meth">helpers</span> — URL↔title mapping (percent-decoding, underscore↔space).</li>
+<li><code>resolve(url, scope)</code> — <code>page</code>: the title. <code>subtree</code>: for <code>Category:</code>/<code>Categoria:</code> seeds, recursive <code>categorymembers</code> walk (pages + subcategories, loop-safe, capped at <code>max_pages</code>); for normal pages, the page plus its direct <code>prop=links</code>. <code>space</code>: <code>list=allpages</code> of namespace 0, paginated via API <code>continue</code>, capped.</li>
+<li><code>fetch(ref)</code> — <code>action=parse</code> with <code>text|revid|links|displaytitle</code>, edit sections and TOC disabled, redirects followed; size cap on the HTML; conversion via <code>html_to_markdown</code>; links = namespace-0 parse links that exist (red links are skipped); <code>revision=str(revid)</code>.</li>
+<li><code>changed_since(ref, revision)</code> — latest <code>revid</code> via <code>prop=revisions</code>; API failure → <code>True</code>.</li>
+</ul></div>
+
+<h3>6.7.5&ensp;adapters.confluence — Confluence REST</h3>
+<div class="fn"><div class="sig">ConfluenceAdapter<span class="tag cls">class</span></div>
+<p>Cloud and Server/Data Center via <code>/wiki/rest/api</code> or <code>/rest/api</code> (both probed).</p>
+<ul>
+<li><code>detect(url, session)</code> <span class="tag meth">classmethod</span> — purely URL-shaped: <code>/wiki/spaces/</code>, <code>/display/</code>, <code>viewpage.action</code> or <code>/pages/&lt;id&gt;</code>.</li>
+<li><code>_ensure_rest(url)</code> <span class="tag meth">helper</span> — probes <code>GET /space?limit=1</code> on each candidate; 200 <em>or</em> 403 confirm existence (403 logs a warning about missing permissions). <b>Raises</b> <code>RuntimeError</code> when neither answers.</li>
+<li><code>_content_id_from_url(url)</code> <span class="tag meth">helper</span> — id from <code>/pages/&lt;id&gt;</code> or <code>pageId=</code>; for <code>/display/SPACE/Title</code> URLs it resolves by title through the content API. <b>Raises</b> <code>ValueError</code> when underivable.</li>
+<li><code>resolve(url, scope)</code> — <code>page</code>: the content id. <code>subtree</code>: iterative descent through <code>child/page</code> (paginated, capped). <code>space</code>: <code>GET /content?spaceKey=…&amp;type=page</code> paginated (requires a <code>/spaces/&lt;KEY&gt;/</code> URL, else <b>raises</b> <code>ValueError</code>).</li>
+<li><code>fetch(ref)</code> — <code>GET /content/&lt;id&gt;?expand=body.storage,version,children.page</code>; converts the XHTML storage body; links = direct child pages; <code>revision=str(version.number)</code>.</li>
+<li><code>changed_since(ref, revision)</code> — compares <code>version.number</code>; failure → <code>True</code>.</li>
+</ul></div>
+
+<h3>6.7.6&ensp;adapters.notion — official Notion API</h3>
+<div class="fn"><div class="sig">NotionAdapter<span class="tag cls">class</span></div>
+<p>API <code>https://api.notion.com/v1</code>, version header <code>2022-06-28</code>. Requires a <code>bearer</code> profile with an integration token; target pages must be shared with the integration. Notion's ~3&nbsp;rps limit is handled by the throttled session + <code>Retry-After</code>.</p>
+<ul>
+<li><code>detect(url, session)</code> <span class="tag meth">classmethod</span> — host contains <code>notion.so</code>/<code>notion.site</code>.</li>
+<li><code>_page_id_from_url(url)</code> <span class="tag meth">static helper</span> — extracts the 32-hex (or dashed) id anywhere in the URL, or from the slug tail; normalises to dashed UUID via <code>_dash_id</code>. <b>Raises</b> <code>ValueError</code>.</li>
+<li><code>_get(path, **params)</code> <span class="tag meth">helper</span> — adds the version header; 401 becomes a descriptive <code>PermissionError</code> explaining the integration-token requirement.</li>
+<li><code>resolve(url, scope)</code> — always <code>[PageRef(page_id)]</code>: child pages surface as links during the BFS, so for Notion <em>scope and depth coincide</em>.</li>
+<li><code>_render_blocks(block_id, depth, indent) → (lines, child_pages)</code> <span class="tag meth">helper</span> — recursive block renderer (max depth 8, pagination via <code>start_cursor</code>). Handles: paragraph, heading_1-3, bulleted/numbered list items, to_do (checkboxes), code (fenced with language), quote, callout (💡 quote), divider, table (via <code>_render_table</code>: first row = header separator), child_page (recorded as BFS child + 📄 bullet), child_database (🗃 bullet, not descended), and nested children for toggle-like blocks.</li>
+<li><code>_rich_text(rt) → str</code> <span class="tag func">module helper</span> — Notion rich-text → Markdown inline (code, bold, italic, strikethrough, links).</li>
+<li><code>fetch(ref)</code> — page title from the <code>title</code> property, body from the block renderer, size cap on the result; children get <code>depth = ref.depth+1</code>; <code>revision = last_edited_time</code>.</li>
+<li><code>changed_since(ref, revision)</code> — compares <code>last_edited_time</code>; failure → <code>True</code>.</li>
+</ul></div>
+
+<h2 id="m-convert">6.8&ensp;wikibridge.convert — content conversion</h2>
+<h3>6.8.1&ensp;convert.html_md</h3>
+<div class="fn"><div class="sig">html_to_markdown(html, url="") → (markdown, title)<span class="tag func">function</span></div>
+<p>Two-tier strategy: (1) <code>trafilatura.extract</code> in Markdown mode (main-content extraction: strips nav/footer/ads; links and tables kept, images dropped, <code>favor_recall</code>); (2) when the result is shorter than 200 characters — short pages, unusual layouts, or trafilatura failure — fallback to <code>markdownify</code> over the whole <code>&lt;body&gt;</code> after removing <code>script/style/nav/footer/header/aside</code> (ATX headings, images stripped). Title = <code>&lt;title&gt;</code> text or the URL.</p></div>
+<div class="fn"><div class="sig">extract_links(html, base_url) → list[str]<span class="tag func">function</span></div>
+<p>All <code>&lt;a href&gt;</code> targets: resolved absolute against <code>base_url</code>, fragments removed, <code>javascript:/mailto:/tel:/#</code> skipped, http(s) only, de-duplicated in document order.</p></div>
+<h3>6.8.2&ensp;convert.docs</h3>
+<p>Constants: <code>MARKITDOWN_EXT</code> (pdf docx pptx xlsx xls html htm csv json xml epub msg), <code>PLAIN_EXT</code> (md markdown txt rst), <code>SUPPORTED_EXT</code> = union, <code>MAX_DOC_MB = 50</code>.</p>
+<div class="fn"><div class="sig">convert_document(path: Path) → str<span class="tag func">function</span></div>
+<p>Plain extensions are read as UTF-8 (errors replaced); markitdown extensions go through <code>MarkItDown(enable_plugins=False)</code>. <b>Raises</b> <code>ValueError</code> for unsupported extensions.</p></div>
+<div class="fn"><div class="sig">ingest_path(cfg, project, path, *, recursive=False, catalog=None, progress=None) → dict<span class="tag func">function</span></div>
+<p>File-or-directory ingest (§2.4). Directory scans glob <code>*</code>/<code>**/*</code> filtered by <code>SUPPORTED_EXT</code>, sorted. Per file: <code>progress({phase:"converting", pages, max_pages, detail})</code>; size cap; conversion; empty result = skip; <code>writer.write_source(kind="document", url=file&nbsp;URI, extra_fm={original_path, format})</code>; on change → FTS upsert + optional <code>catalog(project, rel)</code> hook. Ends with a log line and <code>index.md</code> rebuild. Returns <code>{files, imported, skipped, errors}</code>. <b>Raises</b> <code>FileNotFoundError</code> for a missing path.</p></div>
+<div class="fn"><div class="sig">ingest_cli(cfg, store, args) → int<span class="tag func">function</span></div>
+<p>CLI wrapper: resolves the project, wires the catalogue hook unless <code>--no-catalog</code>, prints progress + JSON summary; exit 1 when <code>errors</code> is non-empty.</p></div>
+
+<h2 id="m-wiki">6.9&ensp;wikibridge.wiki — the LLM Wiki itself</h2>
+<h3>6.9.1&ensp;wiki.writer — page writing</h3>
+<p>Module helpers: <code>page_slug(title, max_len=80)</code> (kebab-case slug, fallback <code>"pagina"</code>); <code>now_iso()</code> (UTC, seconds); <code>parse_frontmatter(text) → (dict, body)</code> (tolerant: missing/invalid YAML → empty dict, full text as body); <code>render_page(frontmatter, body) → str</code> (YAML block + body, unicode-safe, insertion-ordered keys). Constant <code>SECTION_TITLES</code> maps sections to the Italian headings used in <code>index.md</code>.</p>
+<div class="fn"><div class="sig">WikiWriter(project)<span class="tag cls">class</span></div>
+<p>Single write path for one project's wiki (internal lock; layout ensured at construction).</p>
+<ul>
+<li><code>write_page(section, slug, frontmatter, body) → Path</code> — validates the section (<b>raises</b> <code>ValueError</code>), defaults <code>updated</code>, writes <code>wiki/&lt;section&gt;/&lt;slug&gt;.md</code>.</li>
+<li><code>read_page(rel_path) → (frontmatter, body)</code> — resolves under <code>wiki/</code> and <b>blocks path traversal</b> (<b>raises</b> <code>ValueError</code> for out-of-tree paths, <code>FileNotFoundError</code> for missing pages).</li>
+<li><code>write_source(*, title, markdown, url="", source_kind="web", import_id="", revision=None, extra_fm=None) → (Path, changed)</code> — the import/ingest writer. Computes <code>content_sha256</code>; if the target page already carries the same hash, returns <code>changed=False</code> without rewriting (the incremental-sync cornerstone). Frontmatter: title, kind, url, import_id, revision, sha, updated, + <code>extra_fm</code>.</li>
+<li><code>write_meeting(*, meeting_id, title, date, source, participants, summary, highlights, agreements, tasks, transcript_path="") → Path</code> — composes the meeting page (sections <i>Contenuto/Accordi/Attività</i>, checkbox task list, optional transcript link); slug = <code>YYYY-MM-DD-title</code>.</li>
+<li><code>append_log(line)</code> — appends a timestamped bullet to <code>log.md</code> (creates it with a <code># Log</code> header on first use).</li>
+<li><code>rebuild_index() → Path</code> — regenerates <code>index.md</code>: one section heading per non-empty section, one link per page (title from frontmatter).</li>
+<li><code>write_overview(markdown) → Path</code> — replaces <code>overview.md</code>.</li>
+<li><code>tree() → dict</code> — <code>{section: [{file, title, updated}]}</code> for GUIs.</li>
+<li><code>iter_pages()</code> — generator of <code>(rel_path, frontmatter, body)</code> over every page, section by section (used by FTS rebuild and the graph builder).</li>
+</ul></div>
+<h3>6.9.2&ensp;wiki.search — FTS5 index</h3>
+<div class="fn"><div class="sig">SearchIndex(project)<span class="tag cls">class</span></div>
+<p>SQLite FTS5 virtual table <code>pages(path UNINDEXED, section UNINDEXED, title, body)</code>, tokenizer <code>unicode61 remove_diacritics 2</code>, stored in <code>index.db</code>; schema auto-created per connection.</p>
+<ul>
+<li><code>upsert(rel_path, section, title, body)</code> — delete-then-insert by path.</li>
+<li><code>remove(rel_path)</code> — drop one page.</li>
+<li><code>rebuild() → int</code> — wipe and re-index every page via <code>WikiWriter.iter_pages()</code>; returns the page count.</li>
+<li><code>query(q, limit=20) → list[dict]</code> — free-text search: double quotes are neutralised, every term is individually quoted (hyphens/colons cannot break FTS syntax), BM25 ranking, snippets with <code>**…**</code> highlights and ellipses. Returns <code>[{path, section, title, snippet}]</code>; empty query → <code>[]</code>.</li>
+</ul></div>
+<h3>6.9.3&ensp;wiki.graph — knowledge graph</h3>
+<div class="fn"><div class="sig">build_graph(project) → {"nodes": int, "edges": int}<span class="tag func">function</span></div>
+<p>Builds the project graph and writes both artifacts. Nodes = every wiki page except <code>syntheses/</code>, coloured by section (sources blue, entities red, concepts green, meetings purple), label = title (40-char cap), size (<code>value</code>) grows with incoming mentions. Edges from two sources: (1) frontmatter <code>mentions</code> lists (entity/concept → the source that mentions it); (2) <code>graph/relations.jsonl</code> lines <code>{from, to, kind, source}</code> — endpoint names are slug-matched to page titles, self-loops and unresolvable names dropped, <code>kind</code> becomes the edge label (20-char cap). Outputs: <code>graph.json</code> (vis-network dataset) and self-contained <code>graph.html</code> (CDN vis-network, dark theme, physics stabilisation, legend).</p></div>
+</div>
+
+<div class="twocol">
+<h2 id="m-brain">6.10&ensp;wikibridge.brain — the cataloguing LLM backends</h2>
+<div class="fn"><div class="sig">parse_json_reply(text) → dict | None<span class="tag func">function</span></div>
+<p>Robust JSON extraction from an LLM reply: strips <code>```json</code> fences, then takes the outermost <code>{…}</code> span; <code>None</code> on any parse failure (callers retry or skip).</p></div>
+<div class="fn"><div class="sig">NullBrain<span class="tag cls">class</span>&emsp;·&emsp;AgentQueueBrain<span class="tag cls">class</span></div>
+<p>Both expose <code>mode</code> (<code>"none"</code> / <code>"agent"</code>) and a <code>complete_json(system, user, *, max_tokens=3000) → None</code>. Neither calls any API: <code>NullBrain</code> disables cataloguing entirely; <code>AgentQueueBrain</code> makes the cataloguer enqueue tasks in <code>_pending/</code> for the hosting agent to drain.</p></div>
+<div class="fn"><div class="sig">OpenAIHttpBrain(cfg)<span class="tag cls">class</span></div>
+<p><code>mode = "openai_http"</code>. Talks to <code>cfg.lmstudio_url</code>.</p>
+<ul>
+<li><code>_model_id() → str</code> <span class="tag meth">helper</span> — configured model or the first entry of <code>GET /models</code> (cached). <b>Raises</b> <code>RuntimeError</code> when the endpoint reports no loaded model.</li>
+<li><code>complete_json(system, user, *, max_tokens=0) → dict | None</code> — <code>POST /chat/completions</code> (temperature 0.2, 300&nbsp;s timeout, <code>max_tokens</code> defaulting to <code>brain_max_tokens</code>). Two attempts; between them, a corrective turn (<i>"Rispondi SOLO con il JSON richiesto…"</i>) is appended when the reply was not parseable JSON. <code>None</code> after both attempts fail.</li>
+</ul></div>
+<div class="fn"><div class="sig">make_brain(cfg, mode=None)<span class="tag func">function</span></div>
+<p>Factory keyed on <code>mode or cfg.brain_mode</code>; unknown values fall back to <code>NullBrain</code>.</p></div>
+
+<h2 id="m-catalog">6.11&ensp;wikibridge.catalog — entities, concepts, relations</h2>
+<p>Map-reduce cataloguing (§2.6). Module prompts: <code>SYSTEM_PROMPT</code> (JSON-only knowledge cataloguer) and <code>MAP_PROMPT</code> (schema: entities with <code>name/type/summary</code> — types persona|organizzazione|sistema|luogo|prodotto —, concepts with <code>name/summary</code>, relations with <code>from/to/kind</code>).</p>
+<div class="fn"><div class="sig">normalize_name(name) → str<span class="tag func">function</span></div>
+<p>Merge key: NFKD → ASCII fold → collapse whitespace → lower-case. <i>"Réseau  API"</i> ≡ <i>"reseau api"</i>.</p></div>
+<div class="fn"><div class="sig">_split_chunks(text, chunk_chars) → list[str]<span class="tag func">helper</span></div>
+<p>Greedy paragraph packing up to <code>chunk_chars</code> (a single oversized paragraph is kept whole).</p></div>
+<div class="fn"><div class="sig">merge_partials(partials) → dict<span class="tag func">function</span></div>
+<p>Fuses per-chunk JSONs: entities/concepts keyed by normalised name (first occurrence keeps name/type; new non-duplicate summaries are concatenated); relations de-duplicated on the normalised <code>(from, to, kind)</code> triple, incomplete triples dropped.</p></div>
+<div class="fn"><div class="sig">apply_catalog_result(project, source_rel, result) → {"entities": n, "concepts": n}<span class="tag func">function</span></div>
+<p>The writer half — also invoked directly by <code>catalog-apply</code> in agent mode. For each entity/concept: slug from the name; if the page exists, its body is preserved and the new summary appended only when genuinely new, and its <code>mentions</code> list is extended with <code>source_rel</code>; the <i>"## Menzioni"</i> section is (re)generated with <code>[[backlinks]]</code>; frontmatter <code>kind</code> (<code>entity</code>/<code>concept</code>), <code>type</code>, <code>mentions</code>, <code>updated</code>; FTS upsert per page. Relations are appended to <code>graph/relations.jsonl</code> with the source stamped in. Ends with a log line.</p></div>
+<div class="fn"><div class="sig">catalog_source(cfg, project, source_rel, brain=None) → dict | None<span class="tag func">function</span></div>
+<p>Catalogues one source with the given (or freshly built) brain. <code>agent</code> mode: writes <code>_pending/&lt;stem&gt;.json</code> (<code>{source, title, prompt: "catalog_page", queued}</code>) and returns <code>None</code>. <code>none</code> mode: returns <code>None</code>. Otherwise: chunk → <code>complete_json</code> per chunk → merge → apply. Returns the write summary, or <code>None</code> when no chunk produced output (logged warning).</p></div>
+<div class="fn"><div class="sig">make_catalog_hook(cfg) → callable | None<span class="tag func">function</span></div>
+<p>Returns the <code>(project, source_rel)</code> hook used by importer/ingest, or <code>None</code> when <code>brain_mode=none</code>. The hook never propagates exceptions — a cataloguing failure logs a warning and the import goes on.</p></div>
+<div class="fn"><div class="sig">drain_pending(cfg, project) → {"done": n, "failed": […]}<span class="tag func">function</span></div>
+<p>Processes every <code>_pending/*.json</code> with the HTTP brain (mode forced to <code>openai_http</code>); successful tasks are deleted, failures (exception or empty result) reported per source.</p></div>
+
+<h2 id="m-importer">6.12&ensp;wikibridge.importer — job orchestration</h2>
+<p>Owns the BFS, all limits, progress, history and sync. Type alias <code>CatalogHook = Callable[[Project, str], None] | None</code>.</p>
+<div class="fn"><div class="sig">ImportsLog(project)<span class="tag cls">class</span></div>
+<p>Thread-safe job history over <code>imports.json</code> (atomic temp-file writes).</p>
+<ul>
+<li><code>load() → list[dict]</code> — all records.</li>
+<li><code>upsert(record)</code> — replace-by-id or append.</li>
+<li><code>get(import_id) → dict</code> — <b>raises</b> <code>KeyError</code>.</li>
+<li><code>next_id() → str</code> — <code>imp-0001</code>, <code>imp-0002</code>…</li>
+</ul></div>
+<div class="fn"><div class="sig">run_import(cfg, project, url, *, depth=1, scope="page", limits=None, auth_profile=None, adapter_name="auto", catalog=None, progress=None, cancel=None, resume_record=None) → dict<span class="tag func">function</span></div>
+<p>Executes one blocking import job and returns the final record (Part&nbsp;VII documents its schema).</p>
+<table><tr><th>Param</th><th>Description</th></tr>
+<tr><td><code>depth</code></td><td>Requested BFS depth; clamped by <code>limits.max_depth</code>.</td></tr>
+<tr><td><code>limits</code></td><td><code>ImportLimits</code>; default from config.</td></tr>
+<tr><td><code>auth_profile</code></td><td>Profile name; <code>None</code> → automatic per-host lookup (<code>find_for</code>). An explicit name is host-bound for the future (<code>bind_host</code>).</td></tr>
+<tr><td><code>adapter_name</code></td><td><code>auto</code> or a forced adapter.</td></tr>
+<tr><td><code>catalog</code></td><td>Optional cataloguing hook, called per changed page.</td></tr>
+<tr><td><code>progress</code></td><td>Callback receiving <code>{phase, pages, max_pages, detail}</code>; phases: <code>auth, resolving, fetching, done/error/cancelled/auth_required</code>.</td></tr>
+<tr><td><code>cancel</code></td><td><code>threading.Event</code>; when set, the job ends in <code>cancelled</code>.</td></tr>
+<tr><td><code>resume_record</code></td><td>A previous (truncated) record: its <code>frontier</code> re-seeds the queue and <code>page_index</code> pre-populates the visited set.</td></tr></table>
+<p><b>Flow</b>: apply auth (may itself renew tokens or open the browser) → enable the session's <code>guard_auth</code> → adapter detection (one auth-retry) → resolve seeds (oversized seed sets are truncated into the frontier immediately) → BFS loop: cancellation / wall-clock / page-cap checks, title filter, fetch with auth-retry (helper <code>try_reauth</code>, ≤2 re-logins per job), size budget, <code>write_source</code>, per-change FTS + catalogue, link expansion below <code>depth</code>, periodic checkpoint every 10 pages → terminal states and cleanup (<code>finally</code>: record persisted, log line, <code>index.md</code> rebuilt, final progress emit).</p>
+<p><b>Terminal states</b>: <code>done</code>; <code>cancelled</code>; <code>error</code> (unexpected exception; message in <code>errors</code>); <code>auth_required</code> (wall not recoverable — frontier saved, hint appended: the exact <code>auth login</code>/<code>auth detect</code> command).</p></div>
+<div class="fn"><div class="sig">sync_import(cfg, project, import_id, *, catalog=None, progress=None) → dict<span class="tag func">function</span></div>
+<p>Incremental re-check of one job: rebuilds limits from the record, re-applies (or host-finds) the auth profile with the wall guard on, re-detects the adapter and re-resolves scope, then for every entry of <code>page_index</code>: <code>changed_since?</code> → fetch → rewrite/index/catalogue; the record's <code>revision</code> is updated and <code>last_sync</code> stamped. One automatic re-login attempt per run. Returns <code>{import_id, checked, refetched}</code>. <b>Raises</b> <code>AuthRequiredError</code> when re-auth is impossible.</p></div>
+<div class="fn"><div class="sig">refresh_page(cfg, project, wiki_path, *, catalog=None) → {"path", "changed"}<span class="tag func">function</span></div>
+<p>Single-page re-fetch from the origin recorded in frontmatter (<code>url</code>, <code>adapter</code>, auth profile of the original import or host-matched fallback). <b>Raises</b> <code>ValueError</code> when the page has no origin URL.</p></div>
+<div class="fn"><div class="sig">start_import_cli / sync_import_cli / refresh_page_cli(cfg, store, args) → int<span class="tag func">functions</span></div>
+<p>CLI wrappers: wire limits/catalogue/progress, print the JSON outcome; import returns 0 only on <code>done</code>; sync/refresh catch <code>AuthRequiredError</code> and return exit code 2 with a JSON error.</p></div>
+
+<h2 id="m-server">6.13&ensp;wikibridge.server — Flask HTTP API</h2>
+<div class="fn"><div class="sig">JobRunner<span class="tag cls">class</span></div>
+<p>The single background job slot. <code>start(kind, target, *args, **kwargs) → bool</code> refuses (returns <code>False</code>) while a thread is alive; otherwise resets the cancel event, seeds the observable <code>state</code> dict, and launches a daemon thread that runs <code>target(…, progress=…, [cancel=…])</code>, storing <code>result</code> or <code>error</code> and clearing <code>running</code>. Import jobs additionally receive the cancel event.</p></div>
+<div class="fn"><div class="sig">create_app(cfg) → Flask<span class="tag func">function</span></div>
+<p>Builds the application: CORS on; a <code>before_request</code> bearer check when <code>api_auth_token</code> is set (OPTIONS exempt); a per-request project resolver (query → JSON body → form); all routes of Part&nbsp;V closing over one <code>ProjectStore</code>, <code>AuthProfileStore</code>, <code>JobRunner</code> and the login-state dict.</p></div>
+<div class="fn"><div class="sig">serve(cfg) → None<span class="tag func">function</span></div>
+<p>INFO logging, <code>create_app</code>, <code>app.run(host, port, threaded=True)</code> — development server, adequate for the loopback GUI use case.</p></div>
+
+<h2 id="m-cli">6.14&ensp;wikibridge.cli — argument parsing &amp; dispatch</h2>
+<div class="fn"><div class="sig">main(argv=None) → int<span class="tag func">function</span></div>
+<p>Builds the <code>argparse</code> tree documented in Part&nbsp;IV (global <code>--project</code>; sub-commands <code>project, search, index, graph, catalog-drain, catalog-apply, import, sync, refresh, ingest, auth, serve, skill</code>), loads the config, and dispatches. Heavy modules are imported lazily inside each branch so that e.g. <code>project list</code> never pays for <code>markitdown</code> or Flask. Helper <code>_print(obj)</code> = 1-space-indent JSON. Entry point: <code>python -m wikibridge</code> or the <code>wikibridge</code> console script.</p></div>
+
+<h2 id="m-skill">6.15&ensp;skill/wikibridgectl.py — agent wrapper</h2>
+<div class="fn"><div class="sig">_venv_python() → str | None<span class="tag func">helper</span></div><p>Platform-matching venv interpreter (<code>.venv/Scripts/python.exe</code> on Windows, <code>.venv/bin/python</code> elsewhere), if present.</p></div>
+<div class="fn"><div class="sig">_delegate(argv) → int<span class="tag func">helper</span></div><p>Runs <code>python -m wikibridge …</code> in the venv when available; otherwise inserts the repo into <code>sys.path</code> and calls <code>cli.main</code> in-process (heavy dependencies are only needed by the commands that use them).</p></div>
+<div class="fn"><div class="sig">_status(argv) → int<span class="tag func">helper</span></div><p>Implements the extra <code>status</code> command (§4.9) reading the registry, <code>imports.json</code> and <code>_pending/</code> directly.</p></div>
+<div class="fn"><div class="sig">main() → int<span class="tag func">function</span></div><p>Dispatch: <code>status</code> → <code>_status</code>; <code>ensure-llmwiki</code> → the installer script; anything else → <code>_delegate</code>, relocating a trailing <code>--project</code> pair to the front (it is a global CLI option).</p></div>
+
+<h2 id="m-scripts">6.16&ensp;scripts/ensure_llmwiki.py — companion-skill installer</h2>
+<p>Idempotently verifies/installs the <i>llm-wiki</i> reading skill (repo <code>lewislulu/llm-wiki-skill</code>) on three agent runtimes; prints one JSON status per runtime (<code>ok | installed | skipped | not_installed | error</code> + detail); exit 0 when nothing is in error.</p>
+<div class="fn"><div class="sig">_run(cmd, timeout=120) → (code, output)<span class="tag func">helper</span></div><p>Captured subprocess with friendly codes: 127 = binary missing, 124 = timeout.</p></div>
+<div class="fn"><div class="sig">_wsl(cmd, timeout=120) → (code, output)<span class="tag func">helper</span></div><p>Runs a bash command inside WSL Ubuntu when on Windows, natively otherwise.</p></div>
+<div class="fn"><div class="sig">ensure_hermes() / ensure_openclaw() / ensure_claude_code() → dict<span class="tag func">functions</span></div>
+<p><b>Hermes</b>: looks for <code>~/.hermes/skills/**/llm-wiki*</code> in WSL; clones on miss. <b>OpenClaw</b>: locates the binary (native or WSL), checks <code>skills list --json</code>, installs via <code>skills install git:…@main</code>; absent binary → <code>skipped</code>. <b>Claude Code</b>: checks <code>%USERPROFILE%\.claude\skills\llm-wiki\SKILL.md</code> (Windows home is resolved even from inside WSL); clones on miss.</p></div>
+</div>
+
+<!-- ================================================================ -->
+<!-- PART VII                                                          -->
+<!-- ================================================================ -->
+<h1 id="part7">Part VII — Data &amp; File Formats</h1>
+<div class="twocol">
+
+<h2>7.1&ensp;Wiki page frontmatter</h2>
+<pre>---
+title: Payment API
+kind: web            # web | document | entity | concept
+url: https://wiki.example/Payment_API
+import_id: imp-0003
+revision: '18442'    # adapter-specific validator
+content_sha256: 9f2c…
+updated: '2026-07-10T09:14:22+00:00'
+adapter: mediawiki   # sources only
+mentions:            # entities/concepts only
+- sources/payment-api.md
+type: sistema        # entities only
+original_path: D:\specs\msa.pdf   # ingested documents
+format: .pdf
+---</pre>
+<p>Frontmatter is YAML between <code>---</code> markers at the very start of the file; the parser is tolerant (invalid YAML → treated as body). <code>content_sha256</code> drives dedup; <code>revision</code> drives sync; <code>mentions</code> drives graph edges and the <i>“Menzioni”</i> section.</p>
+
+<h2>7.2&ensp;imports.json — job records</h2>
+<pre>{
+ "id": "imp-0003",
+ "url": "https://wiki.corp.example/Home",
+ "adapter": "mediawiki",
+ "scope": "subtree", "depth": 2,
+ "limits": { …ImportLimits.to_dict()… },
+ "auth_profile": "corp",
+ "state": "done|running|error|cancelled|auth_required",
+ "truncated": false,
+ "frontier": [["https://…", 1], …],   // resume queue
+ "pages": 148, "skipped": 3,
+ "errors": ["https://…: reason", …],
+ "started": "2026-07-10T09:00:11+00:00",
+ "finished": "2026-07-10T09:12:40+00:00",
+ "last_sync": "2026-07-11T08:00:02+00:00",   // sync only
+ "page_index": {
+   "https://wiki…/Page": {"path": "sources/page.md",
+                          "revision": "18442", "depth": 1}
+ }
+}</pre>
+<p><code>frontier</code> holds <code>[url, depth]</code> pairs of pages not yet visited when the job truncated or stopped in <code>auth_required</code>; re-running with the same record resumes from there. <code>page_index</code> is the sync workset.</p>
+
+<h2>7.3&ensp;secrets/auth_profiles.json</h2>
+<pre>{"profiles": {
+  "corp": {
+    "type": "oauth2",
+    "issuer": "https://login.microsoftonline.com/contoso/v2.0",
+    "client_id": "1b2c3d…",
+    "scopes": ["openid","profile","email","offline_access"],
+    "redirect_port": 8776,
+    "auth_params": {"prompt": "select_account"},
+    "hosts": ["wiki.corp.example", "docs.corp.example"]
+  },
+  "intranet": {
+    "type": "cookie",
+    "domain": "intranet.corp.example",
+    "login_url": "https://intranet.corp.example/",
+    "cookies": "C:\\Projects\\wikibridge\\secrets\\cookies\\intranet.txt",
+    "hosts": ["intranet.corp.example"]
+  }
+}}</pre>
+
+<h2>7.4&ensp;secrets/.tokens.json — token cache</h2>
+<pre>{"corp": {
+  "access_token": "eyJ…",
+  "expires_at": 1783701234.5,     // epoch seconds
+  "refresh_token": "0.AXo…"       // newest one (rotation-aware)
+}}</pre>
+<p>Access tokens are reused until 60&nbsp;s before <code>expires_at</code>. Deleting this file simply forces a refresh/login on next use.</p>
+
+<h2>7.5&ensp;graph/ artifacts</h2>
+<pre># relations.jsonl — one JSON per line, appended by the cataloguer
+{"from": "ACME Corp", "to": "Payment API",
+ "kind": "gestisce", "source": "sources/payment-api.md"}
+
+# graph.json — vis-network dataset
+{"nodes": [{"id": "sources/x.md", "label": "…", "group": "sources",
+            "color": "#4f8cc9", "value": 3}],
+ "edges": [{"from": "entities/acme.md", "to": "sources/x.md",
+            "label": "gestisce"}]}</pre>
+
+<h2>7.6&ensp;_pending/ — catalogue task queue (agent mode)</h2>
+<pre>{"source": "sources/payment-api.md",
+ "title": "Payment API",
+ "prompt": "catalog_page",
+ "queued": "2026-07-10T09:12:41+00:00"}</pre>
+<p>The agent reads the source, applies <code>skill/prompts/catalog_page.md</code>, calls <code>catalog-apply</code>; the task file is deleted on success (by <code>catalog-apply</code> or <code>drain_pending</code>).</p>
+
+<h2>7.7&ensp;secrets/cookies/&lt;profile&gt;.txt</h2>
+<p>Mozilla/Netscape <code>cookies.txt</code> format (as produced by <code>MozillaCookieJar.save</code>, loadable by curl/wget too). Referenced by the profile's <code>cookies</code> field; a non-path value in that field is instead parsed as a literal <code>k=v; k2=v2</code> header string.</p>
+</div>
+
+<!-- ================================================================ -->
+<!-- PART VIII                                                         -->
+<!-- ================================================================ -->
+<h1 id="part8">Part VIII — Troubleshooting, Known Issues &amp; Limits</h1>
+<div class="twocol">
+
+<h2>8.1&ensp;Quick diagnosis table</h2>
+<table>
+<tr><th>Symptom</th><th>Likely cause → fix</th></tr>
+<tr><td>Job ends <code>auth_required</code></td><td>Wall detected and re-login impossible. Run the hint printed in <code>errors</code> (<code>auth login</code> / <code>auth detect --save</code> + <code>auth login</code>), then re-run — the frontier resumes the job.</td></tr>
+<tr><td><code>variabile d'ambiente mancante: X</code></td><td>A profile field uses <code>env:X</code> but the variable is unset in <em>this</em> shell/service. Export it or edit the profile.</td></tr>
+<tr><td>Login browser opens, then <code>TimeoutError</code></td><td>Callback never reached the loopback listener: check the registered redirect URI (<code>http://127.0.0.1:&lt;redirect_port&gt;/callback</code>), local firewall, or complete within <code>auth_login_timeout_s</code>.</td></tr>
+<tr><td><code>porta 8776 occupata</code></td><td>Another process (or a stuck login) owns the port. Change <code>redirect_port</code> in the profile — remember to update the IdP registration accordingly.</td></tr>
+<tr><td>No refresh token after login</td><td>The IdP did not grant one: add <code>offline_access</code> to <code>scopes</code> (Azure/Okta/Atlassian) or <code>auth_params: {access_type: offline, prompt: consent}</code> (Google), then <code>auth login</code> again.</td></tr>
+<tr><td>Cookie capture returns 0 cookies / fails</td><td><code>browser-cookie3</code> missing or the browser store is encrypted (recent Chrome). Log in with Firefox or Edge, or paste the <code>Cookie:</code> header manually when prompted.</td></tr>
+<tr><td>Notion pages come back 401</td><td>The integration token is missing/invalid <em>or the page is not shared with the integration</em> — both are required.</td></tr>
+<tr><td>Confluence REST answers 403</td><td>The REST API exists but your identity lacks read permission on the space; the adapter logs a warning and continues probing.</td></tr>
+<tr><td>Empty/garbled Markdown from an HTML site</td><td>Content is JavaScript-rendered — not supported in 0.1 (no headless browser). Use the site's API/export, or ingest saved HTML files.</td></tr>
+<tr><td><code>robots.txt vieta: …</code></td><td>The generic crawler honours robots. If you have the right to bypass it, set <code>respect_robots: false</code> (or per-import override) deliberately.</td></tr>
+<tr><td>LM Studio cataloguing does nothing</td><td>Endpoint down or no model loaded (<code>RuntimeError: nessun modello caricato</code>). Start LM Studio, load a model, then <code>catalog-drain</code>.</td></tr>
+<tr><td>HTTP API returns 409</td><td>Single-job policy: an import/ingest/sync is already running. Poll <code>/health</code> until <code>job.running=false</code>.</td></tr>
+</table>
+
+<h2>8.2&ensp;Known issues in release 0.1</h2>
+<p>An independent multi-agent code review of the authentication subsystem confirmed the following defects, kept here for transparency until fixed. Numbers match the internal review report.</p>
+<table>
+<tr><th>#</th><th>Area</th><th>Issue &amp; practical workaround</th></tr>
+<tr><td>1</td><td>Token cache</td><td>A refresh token supplied via <code>env:VAR</code> is persisted <em>resolved</em> (plaintext) into <code>.tokens.json</code> after the first refresh. Workaround: rely on interactive login instead of a pre-seeded env refresh token, or protect/purge <code>.tokens.json</code>.</td></tr>
+<tr><td>2</td><td>Wall detector</td><td>Anonymous imports of public sites can abort in <code>auth_required</code> when the crawler follows the site's own “Log in” link. Workaround: <code>--exclude "*login*"</code> (and similar) or import with <code>--scope subtree</code> away from the login page.</td></tr>
+<tr><td>3</td><td>Adapters</td><td>Confluence/MediaWiki endpoint probes swallow the wall error, misreporting an expired session as “REST API not found” / wrong adapter. Workaround: run <code>auth login</code> first, then import.</td></tr>
+<tr><td>4</td><td>Headless refresh</td><td>With <code>auth_interactive</code> left true, an expired refresh token in an unattended job blocks up to 5&nbsp;min waiting for a browser nobody drives, then ends in <code>error</code> (not <code>auth_required</code>). Workaround: set <code>auth_interactive: false</code> on servers.</td></tr>
+<tr><td>5</td><td>Import retry</td><td>If a page is still walled after a “successful” re-login, it is silently skipped (absent from frontier and index). Workaround: verify <code>pages</code> count; re-import after fixing auth.</td></tr>
+<tr><td>6</td><td>Sync</td><td>A failure on the single retried page aborts the whole sync run and skips persisting its record. Workaround: re-run <code>sync</code>; check <code>errors</code>.</td></tr>
+<tr><td>7</td><td>Re-login budget</td><td>Per-page 401s (permission-restricted pages) consume the 2-re-login budget and can abort an otherwise valid job. Workaround: <code>--exclude</code> restricted areas.</td></tr>
+<tr><td>8</td><td>Server cookie login</td><td><code>POST /auth/login</code> for cookie profiles captures immediately (pre-login cookies) unless you use the two-phase <code>capture:true</code> call after logging in. Prefer the CLI flow for cookie profiles.</td></tr>
+<tr><td>9</td><td>Server cookie re-login</td><td>A cookie re-login triggered inside a server job can block on a console prompt when the server has a TTY. Workaround: <code>auth_interactive: false</code> for served instances.</td></tr>
+<tr><td>10</td><td>Login concurrency</td><td><code>/auth/login</code> state is not lock-protected; concurrent logins can misreport status. Workaround: serialise logins from the GUI.</td></tr>
+</table>
+
+<h2>8.3&ensp;Design limits (by intent)</h2>
+<ul>
+<li>Depth hard-capped at 3; one background job at a time over HTTP; attachments not downloaded (<code>max_attachments_mb=0</code>).</li>
+<li>JavaScript-rendered pages unsupported (no headless browser).</li>
+<li><code>project delete</code> never deletes files; auth secrets are write-only over HTTP; page reads are confined to the wiki tree (path-traversal guard).</li>
+<li>The Flask development server targets loopback GUIs — front it with a real WSGI server + TLS if it must leave the machine.</li>
+</ul>
+</div>
+
+<!-- ================================================================ -->
+<!-- APPENDICES                                                        -->
+<!-- ================================================================ -->
+<h1 id="appa">Appendix A — Documentation Coverage Audit</h1>
+<div class="twocol">
+<p>As part of producing this manual, every module was audited for in-code documentation. Verdict: <strong>all 18 modules carry an explanatory module docstring</strong> describing purpose and design; all public entry points are documented either by docstring or by unambiguous module-level documentation. The gaps below are trivial private helpers whose behaviour is obvious from context; they are fully specified in Part&nbsp;VI regardless.</p>
+<table>
+<tr><th>Module</th><th>Module docstring</th><th>Public API docstrings</th><th>Residual gaps (minor)</th></tr>
+<tr><td>config</td><td>✔</td><td>✔ (<code>load_config</code>)</td><td>path accessors (one-liners)</td></tr>
+<tr><td>projects</td><td>✔</td><td>✔ (store methods)</td><td><code>slugify</code>, dataclass props</td></tr>
+<tr><td>limits</td><td>✔</td><td>✔ (<code>from_config</code>)</td><td><code>title_allowed</code>, <code>RateLimiter.wait</code></td></tr>
+<tr><td>http</td><td>✔</td><td>✔ (class-level)</td><td><code>request</code> override (documented at class level)</td></tr>
+<tr><td>auth</td><td>✔ (full lifecycle)</td><td>✔ (all methods)</td><td>—</td></tr>
+<tr><td>oauth</td><td>✔ (flow + detection)</td><td>✔ (all functions)</td><td>—</td></tr>
+<tr><td>adapters/*</td><td>✔ (per adapter: API used, scopes, etiquette)</td><td>✔ (contract + key helpers)</td><td>small URL/id helpers</td></tr>
+<tr><td>convert/*</td><td>✔</td><td>✔</td><td>—</td></tr>
+<tr><td>wiki/writer</td><td>✔ (layout spec)</td><td>✔ (core writers)</td><td><code>write_page</code>, <code>append_log</code>, <code>write_overview</code></td></tr>
+<tr><td>wiki/search</td><td>✔</td><td>✔ (<code>rebuild</code>, <code>query</code>)</td><td><code>upsert</code>/<code>remove</code> (self-evident)</td></tr>
+<tr><td>wiki/graph</td><td>✔ (sources of edges)</td><td>module-level</td><td><code>build_graph</code> lacks own docstring</td></tr>
+<tr><td>brain</td><td>✔ (three backends)</td><td>✔ (<code>parse_json_reply</code>)</td><td><code>complete_json</code> impls</td></tr>
+<tr><td>catalog</td><td>✔ (map-reduce design)</td><td>✔ (all functions)</td><td>—</td></tr>
+<tr><td>importer</td><td>✔ (record schema)</td><td>✔ (all functions)</td><td>—</td></tr>
+<tr><td>server</td><td>✔ (auth &amp; job model)</td><td>✔ (<code>JobRunner</code>)</td><td>route handlers (self-describing)</td></tr>
+<tr><td>cli</td><td>✔ (command map)</td><td>—</td><td><code>main</code> (covered by module docstring)</td></tr>
+<tr><td>wikibridgectl</td><td>✔</td><td>✔ (helpers)</td><td>—</td></tr>
+<tr><td>ensure_llmwiki</td><td>✔ (runtimes + actions)</td><td>—</td><td>per-runtime functions (covered by module docstring)</td></tr>
+</table>
+</div>
+
+<h1 id="appb">Appendix B — Glossary</h1>
+<div class="twocol">
+<table>
+<tr><th>Term</th><th>Definition</th></tr>
+<tr><td>Adapter</td><td>Pluggable source driver implementing <code>resolve/fetch/changed_since</code> for one wiki family.</td></tr>
+<tr><td>Auth profile</td><td>Named, reusable credential bundle applied to the HTTP session; may be bound to hosts for automatic selection.</td></tr>
+<tr><td>Auth wall / login wall</td><td>A response proving the source demands authentication (401, IdP redirect, login form instead of content).</td></tr>
+<tr><td>BFS</td><td>Breadth-first traversal of same-wiki links from the seed set, bounded by <code>depth</code>.</td></tr>
+<tr><td>Brain</td><td>The LLM backend used for cataloguing (<code>openai_http</code>, <code>agent</code>, <code>none</code>).</td></tr>
+<tr><td>Frontier</td><td>The saved queue of not-yet-visited pages of a truncated/stopped job; enables resume.</td></tr>
+<tr><td>LLM Wiki</td><td>The per-project Markdown knowledge base (sources/entities/concepts/syntheses/meetings) with index, log and overview.</td></tr>
+<tr><td>PKCE</td><td>Proof Key for Code Exchange (RFC 7636): the code-challenge mechanism that lets a public client run the OAuth code flow without a client secret.</td></tr>
+<tr><td>Profile binding</td><td>Recording a wiki host in a profile's <code>hosts</code> so future operations select it automatically.</td></tr>
+<tr><td>Revision</td><td>Adapter-native change validator stored per source (revid, version number, last_edited_time, ETag/Last-Modified).</td></tr>
+<tr><td>Scope</td><td>Seed-set strategy of an import: <code>page</code>, <code>subtree</code>, <code>space</code>.</td></tr>
+<tr><td>Seed set</td><td>Initial pages produced by <code>resolve()</code> from which the BFS starts.</td></tr>
+<tr><td>Source</td><td>A wiki page under <code>sources/</code> mirroring one imported web page or document.</td></tr>
+<tr><td>Sync</td><td>Incremental re-download limited to pages whose revision changed.</td></tr>
+</table>
+<hr class="sep">
+<p class="small">WikiBridge — User &amp; Reference Manual, Edition 1.0 · Generated from source revision of 2026-07-10 · This document is self-contained: print it via the browser (A4) for a paginated two-column hardcopy.</p>
+</div>
+
+</main>
+</body>
+</html>

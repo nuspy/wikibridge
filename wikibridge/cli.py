@@ -8,7 +8,9 @@ Comandi:
   sync <import-id>                    sync incrementale        (fase P2+)
   refresh <wiki-path>                 refresh puntuale pagina  (fase P2+)
   ingest <file|dir> [...]             import documenti         (fase P5)
-  auth add|list|remove                profili di autenticazione(fase P2)
+  auth add|list|remove|login|detect   profili di autenticazione(fase P2)
+                                      login = OAuth/SSO dal browser,
+                                      detect = riconosce la protezione
   serve                               server HTTP :8775        (fase P8)
   skill ensure-llmwiki                verifica/installa llm-wiki (fase P7)
 """
@@ -96,6 +98,18 @@ def main(argv: list[str] | None = None) -> int:
     auth_sub.add_parser("list")
     ar = auth_sub.add_parser("remove")
     ar.add_argument("name")
+    al = auth_sub.add_parser(
+        "login", help="login interattivo dal browser (oauth2/cookie); "
+                      "salva token/cookie per gli import successivi")
+    al.add_argument("name")
+    al.add_argument("--no-browser", action="store_true",
+                    help="non aprire il browser: stampa solo l'URL")
+    ad = auth_sub.add_parser(
+        "detect", help="rileva la protezione di un URL (OAuth/SSO/basic) "
+                       "e suggerisce il profilo")
+    ad.add_argument("url")
+    ad.add_argument("--save", metavar="NOME",
+                    help="salva il profilo suggerito con questo nome")
 
     sub.add_parser("serve", help="avvia il server HTTP")
 

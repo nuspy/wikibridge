@@ -49,6 +49,12 @@ class Config:
     respect_robots: bool = True
     max_runtime_min: int = 30
 
+    # Autenticazione interattiva: con True un token mancante/scaduto apre
+    # il browser per il login OAuth/SSO (sulla macchina locale); con False
+    # l'import fallisce con l'istruzione `auth login` (ambienti headless).
+    auth_interactive: bool = True
+    auth_login_timeout_s: int = 300
+
     user_agent: str = "wikibridge/0.1 (+https://github.com/nuspy)"
 
     def data_path(self) -> Path:
