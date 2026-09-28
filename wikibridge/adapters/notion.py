@@ -164,6 +164,7 @@ class NotionAdapter(SourceAdapter):
         # (depth fa da estensione); per Notion scope e depth coincidono.
 
     def fetch(self, ref: PageRef) -> PageContent:
+        ref.id = ref.id or self._page_id_from_url(ref.url)
         page = self._get(f"/pages/{ref.id}")
         title = ""
         for prop in page.get("properties", {}).values():
@@ -184,7 +185,7 @@ class NotionAdapter(SourceAdapter):
         if not revision:
             return True
         try:
-            page = self._get(f"/pages/{ref.id}")
+            page = self._get(f"/pages/{ref.id or self._page_id_from_url(ref.url)}")
             return page.get("last_edited_time") != revision
         except Exception:  # noqa: BLE001
             return True

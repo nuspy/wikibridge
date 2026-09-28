@@ -57,6 +57,47 @@ class Config:
 
     user_agent: str = "wikibridge/0.1 (+https://github.com/nuspy)"
 
+    # Identità di chi interroga l'API (diverso da AuthProfileStore, che
+    # sono le credenziali dell'importer verso le sorgenti esterne).
+    # "none" = nessuna integrazione enterprise, comportamento invariato.
+    identity_provider: str = "none"       # none | ldap
+    identity_role_map: dict = field(default_factory=dict)  # gruppo nativo -> ruolo ACL
+
+    # LDAP / Active Directory
+    ldap_url: str = ""                    # ldap://... o ldaps://...
+    ldap_bind_dn: str = ""
+    ldap_bind_password: str = ""          # valore letterale o "env:VAR"
+    ldap_base_dn: str = ""
+    ldap_user_filter: str = "(sAMAccountName={username})"
+    ldap_group_attr: str = "memberOf"
+    ldap_start_tls: bool = False          # StartTLS su ldap://
+    ldap_ca_file: str = ""                # CA per verificare il certificato del DC
+    ldap_allow_insecure: bool = False     # ldap:// in chiaro: SOLO per test
+
+    # Sessioni utente (modalità con identity provider): il login LDAP avviene
+    # una volta, poi le richieste usano un token di sessione revocabile.
+    session_idle_min: int = 30
+    session_max_hours: int = 8
+    login_max_failures_user: int = 5      # tenerlo SOTTO la soglia di blocco AD
+    login_max_failures_ip: int = 20
+    login_window_s: int = 300
+
+    # Esposizione in rete: con un identity provider attivo e api_host non
+    # loopback serve TLS (certificato qui o reverse proxy TLS davanti).
+    api_tls_cert: str = ""
+    api_tls_key: str = ""
+    behind_tls_proxy: bool = False
+    cors_origins: list = field(default_factory=list)  # vuoto + identity = nessun CORS
+
+    # Cache dei ruoli risolti dal provider (evita un round-trip LDAP per
+    # ogni ricerca) e filtro ACL sui blocchi di conoscenza.
+    entitlement_cache_ttl_s: int = 300
+    default_acl_classification: str = "internal"
+    # livello massimo visibile a un utente autenticato senza un ruolo
+    # "clearance:<livello>" (public < internal < confidential < restricted)
+    default_clearance: str = "internal"
+    acl_enforcement: bool = False         # default globale; Project può sovrascrivere
+
     def data_path(self) -> Path:
         return Path(self.data_dir)
 
@@ -86,6 +127,8 @@ def load_config(path: Path | None = None) -> Config:
                 setattr(cfg, f.name, int(env))
             elif isinstance(cur, float):
                 setattr(cfg, f.name, float(env))
+            elif isinstance(cur, (dict, list)):
+                setattr(cfg, f.name, json.loads(env))
             else:
                 setattr(cfg, f.name, env)
     return cfg

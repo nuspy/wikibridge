@@ -19,7 +19,16 @@ dependencies = [
     "python-slugify>=8.0",
     "pyyaml>=6.0",
     "browser-cookie3>=0.19",
+    "ldap3>=2.9",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+server = ["waitress>=3.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
 
 [project.scripts]
 wikibridge = "wikibridge.cli:main"

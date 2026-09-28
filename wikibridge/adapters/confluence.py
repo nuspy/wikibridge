@@ -27,6 +27,7 @@ _SPACE_RE = re.compile(r"/spaces/([^/]+)")
 
 class ConfluenceAdapter(SourceAdapter):
     name = "confluence"
+    LISTING_SCOPES = frozenset({"subtree", "space"})
 
     def __init__(self, session, limits):
         super().__init__(session, limits)
@@ -131,6 +132,7 @@ class ConfluenceAdapter(SourceAdapter):
         if not self._rest:
             self._ensure_rest(ref.url)
         cid = ref.id or self._content_id_from_url(ref.url)
+        ref.id = cid
         data = self._get(f"/content/{cid}",
                          expand="body.storage,version,children.page")
         html = data.get("body", {}).get("storage", {}).get("value", "")

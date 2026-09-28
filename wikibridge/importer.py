@@ -22,6 +22,7 @@ import time
 from collections import deque
 from datetime import datetime, timezone
 from typing import Callable
+from urllib.parse import urlparse
 
 from .adapters import detect_adapter
 from .adapters.base import PageRef
@@ -42,6 +43,35 @@ CatalogHook = Callable[[Project, str], None] | None
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def wiki_doc_id(adapter_name: str, url: str, native_id: str) -> str:
+    """Id stabile di una pagina wiki: adapter + host + id nativo. Non
+    dipende dal titolo, quindi sopravvive alle rinomine alla sorgente."""
+    host = urlparse(url).netloc.lower()
+    return f"{adapter_name}:{host}:{native_id or url.split('#', 1)[0]}"
+
+
+def import_limits(cfg: Config, rec: dict) -> ImportLimits:
+    limits = ImportLimits.from_config(cfg, **{
+        k: v for k, v in rec.get("limits", {}).items()
+        if k not in ("include", "exclude")})
+    limits.include = rec.get("limits", {}).get("include", [])
+    limits.exclude = rec.get("limits", {}).get("exclude", [])
+    return limits
+
+
+def open_import_adapter(cfg: Config, rec: dict, limits: ImportLimits):
+    """Sessione autenticata + adapter per un import registrato.
+    Ritorna (adapter, session, auth_store, auth_profile)."""
+    session = make_session(cfg, limits)
+    auth_store = AuthProfileStore(cfg)
+    auth_profile = rec.get("auth_profile") or auth_store.find_for(rec["url"])
+    auth_store.apply_profile(session, auth_profile)
+    session.guard_auth = True
+    adapter = detect_adapter(rec["url"], session, limits,
+                             forced=rec.get("adapter", "auto"))
+    return adapter, session, auth_store, auth_profile
 
 
 class ImportsLog:
@@ -218,20 +248,23 @@ def run_import(cfg: Config, project: Project, url: str, *,
                 rec["truncated"] = True
                 break
 
+            doc_id = wiki_doc_id(adapter.name, page.ref.url, page.ref.id)
             path, changed = writer.write_source(
                 title=page.ref.title or page.ref.url,
                 markdown=page.markdown, url=page.ref.url,
                 source_kind="web", import_id=rec["id"],
-                revision=page.revision,
+                revision=page.revision, doc_id=doc_id,
+                native_id=page.ref.id,
                 extra_fm={"adapter": adapter.name})
             rel = f"sources/{path.name}"
             rec["page_index"][page.ref.url] = {
                 "path": rel, "revision": page.revision, "depth": ref.depth,
+                "native_id": page.ref.id, "doc_id": doc_id,
             }
             rec["pages"] += 1
             if changed:
                 fm, body = writer.read_page(rel)
-                index.upsert(rel, "sources", fm.get("title", ""), body)
+                index.upsert_page(rel, "sources", fm, body)
                 if catalog:
                     catalog(project, rel)
 
@@ -278,68 +311,14 @@ def run_import(cfg: Config, project: Project, url: str, *,
 def sync_import(cfg: Config, project: Project, import_id: str, *,
                 catalog: CatalogHook = None,
                 progress: Callable[[dict], None] | None = None) -> dict:
-    """Rifetcha solo le pagine cambiate di un import esistente."""
-    imports_log = ImportsLog(project)
-    rec = imports_log.get(import_id)
-    limits = ImportLimits.from_config(cfg, **{
-        k: v for k, v in rec.get("limits", {}).items()
-        if k not in ("include", "exclude")})
-    limits.include = rec.get("limits", {}).get("include", [])
-    limits.exclude = rec.get("limits", {}).get("exclude", [])
-
-    session = make_session(cfg, limits)
-    auth_store = AuthProfileStore(cfg)
-    auth_profile = rec.get("auth_profile") or auth_store.find_for(rec["url"])
-    auth_store.apply_profile(session, auth_profile)
-    session.guard_auth = True
-    adapter = detect_adapter(rec["url"], session, limits,
-                             forced=rec.get("adapter", "auto"))
-    adapter.resolve(rec["url"], rec.get("scope", "page"))  # imposta lo scope
-
-    writer = WikiWriter(project)
-    index = SearchIndex(project)
-    checked = refetched = 0
-    reauthed = False
-    for page_url, info in list(rec["page_index"].items()):
-        checked += 1
-        if progress:
-            progress({"phase": "syncing", "pages": checked,
-                      "max_pages": len(rec["page_index"]),
-                      "detail": page_url})
-        ref = PageRef(id=page_url, url=page_url)
-        if not adapter.changed_since(ref, info.get("revision")):
-            continue
-        try:
-            page = adapter.fetch(ref)
-        except AuthRequiredError:
-            if reauthed or not auth_profile \
-                    or not auth_store.reauth(session, auth_profile):
-                raise
-            reauthed = True
-            page = adapter.fetch(ref)
-        except Exception as e:  # noqa: BLE001
-            rec["errors"].append(f"sync {page_url}: {e}")
-            continue
-        path, changed = writer.write_source(
-            title=page.ref.title or page.ref.url, markdown=page.markdown,
-            url=page.ref.url, source_kind="web", import_id=rec["id"],
-            revision=page.revision, extra_fm={"adapter": adapter.name})
-        info["revision"] = page.revision
-        if changed:
-            refetched += 1
-            rel = f"sources/{path.name}"
-            fm, body = writer.read_page(rel)
-            index.upsert(rel, "sources", fm.get("title", ""), body)
-            if catalog:
-                catalog(project, rel)
-
-    rec["last_sync"] = _now()
-    imports_log.upsert(rec)
-    writer.append_log(
-        f"sync {import_id}: {refetched}/{checked} pagine aggiornate")
-    if refetched:
-        writer.rebuild_index()
-    return {"import_id": import_id, "checked": checked, "refetched": refetched}
+    """Controllo aggiornamenti di un singolo import (ramo wiki): vedi
+    updater.check_updates. Mantiene il formato di risposta storico."""
+    from .updater import check_updates
+    report = check_updates(cfg, project, imports=[import_id],
+                           catalog=catalog, progress=progress)
+    src = report["sources"][0]
+    return {"import_id": import_id, "checked": src["checked"],
+            "refetched": src["updated"] + src["added"], "report": src}
 
 
 def refresh_page(cfg: Config, project: Project, wiki_path: str, *,
@@ -366,16 +345,19 @@ def refresh_page(cfg: Config, project: Project, wiki_path: str, *,
     adapter = detect_adapter(url, session, limits,
                              forced=fm.get("adapter", "auto"))
     adapter.resolve(url, "page")
-    page = adapter.fetch(PageRef(id=url, url=url, title=fm.get("title", "")))
+    page = adapter.fetch(PageRef(id=fm.get("native_id", ""), url=url,
+                                 title=fm.get("title", "")))
     path, changed = writer.write_source(
-        title=fm.get("title") or page.ref.title, markdown=page.markdown,
+        title=page.ref.title or fm.get("title") or url, markdown=page.markdown,
         url=url, source_kind=fm.get("kind", "web"),
         import_id=fm.get("import_id", ""), revision=page.revision,
+        rel_path=wiki_path, native_id=page.ref.id,
+        doc_id=fm.get("doc_id") or wiki_doc_id(adapter.name, url, page.ref.id),
         extra_fm={"adapter": adapter.name})
     if changed:
         rel = f"sources/{path.name}"
         fm2, body = writer.read_page(rel)
-        SearchIndex(project).upsert(rel, "sources", fm2.get("title", ""), body)
+        SearchIndex(project).upsert_page(rel, "sources", fm2, body)
         if catalog:
             catalog(project, rel)
     writer.append_log(f"refresh {wiki_path}: {'aggiornata' if changed else 'invariata'}")

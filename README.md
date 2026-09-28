@@ -70,7 +70,13 @@ wikibridge import <url> [--depth 0..3] [--scope page|subtree|space]
                   [--max-pages N] [--auth-profile NOME]
                   [--adapter auto|generic|mediawiki|confluence|notion]
                   [--include GLOB] [--exclude GLOB] [--no-catalog]
-wikibridge sync <import-id>        # rifetch SOLO delle pagine cambiate
+wikibridge sync <import-id>        # = update --import <import-id>
+wikibridge update                  # controlla TUTTE le sorgenti del progetto
+                  [--import ID] [--ingest ID] [--path FILE|DIR]  # (ripetibili)
+                  [--all-projects] [--no-discover] [--dry-run] [--no-catalog]
+wikibridge sources                 # sorgenti aggiornabili (rami wiki, cartelle, file)
+wikibridge acl show|page|collection|gate|enforce   # autorizzazioni (vedi sotto)
+wikibridge catalog-rebuild         # ricataloga tutto per segmenti (costo LLM)
 wikibridge refresh <wiki-path>     # refresh puntuale di una pagina
 wikibridge ingest <file|dir> [--recursive]
 wikibridge search "query"          # FTS5 con snippet
@@ -98,6 +104,37 @@ Opzione globale `--project <slug>` (default: progetto attivo).
   source registra `revision` + `content_sha256` per il **sync
   incrementale** (MediaWiki revid, Confluence version, Notion
   last_edited_time, ETag/Last-Modified per l'HTML).
+
+## Aggiornamenti (on-demand)
+
+Nessun watcher o scheduler interno: il controllo parte solo quando viene
+richiamato — `wikibridge update`, `POST /update`, un agente o un cron
+(es. Utilità di pianificazione: `wikibridge update --all-projects`, exit
+code 1 se una sorgente ha errori).
+
+- **Sorgenti**: ogni import è un *ramo wiki*; ogni `ingest` registra la
+  cartella (*ramo di file*) o il file (*lista di singoli file*) in
+  `ingests.json`. `--path` accetta file e cartelle: quelli nuovi vengono
+  registrati, quelli già tracciati controllati nella loro sorgente.
+- **Rami wiki**: pagine cambiate (revisione della sorgente), pagine nuove
+  (dall'elenco del ramo per Confluence/MediaWiki `subtree`/`space`, dai
+  link delle pagine cambiate per gli altri), pagine sparite.
+- **File**: cambi rilevati da dimensione/mtime e confermati dallo sha256
+  (niente riconversione se il contenuto è identico); rinomine e
+  spostamenti riconosciuti dall'id file NTFS o dal contenuto.
+- **Niente duplicati**: ogni pagina ha un `doc_id` stabile (id nativo
+  della wiki, o del file) e l'aggiornamento riscrive sempre la stessa
+  pagina, anche se il titolo o il nome del file cambiano. Nelle pagine
+  entità/concetto ogni riassunto è un segmento legato alla source: un
+  aggiornamento lo sostituisce, una rimozione lo toglie.
+- **Rimozioni prudenti**: dopo 2 controlli consecutivi con la sorgente
+  assente; mai se la cartella radice non è raggiungibile o se sparisce
+  in un colpo più di metà del ramo.
+- **Versioni (predisposte)**: ogni source registra `doc_id`,
+  `native_id`, `revision` della sorgente, `content_sha256`,
+  `content_version` (+1 solo se cambia il contenuto), `pipeline_version`,
+  `first_seen`; l'indice di ricerca riporta `doc_id` e `version` per ogni
+  risultato. Lo storico delle versioni non è ancora conservato.
 
 ## Autenticazione
 
@@ -147,11 +184,89 @@ sezione "Menzioni"; le relazioni alimentano il grafo.
 ## API HTTP (:8775)
 
 `/health`, `/projects` (+`/activate`), `/imports` (start/list/get/
-cancel/sync), `/ingest` (+`/dir`), `/meetings` (push riunioni),
+cancel/sync), `/ingest` (+`/dir`), `/update` (controllo aggiornamenti,
+body `{imports?, ingests?, paths?, discover?, dry_run?}`), `/sources`,
+`/acl` (+ `PUT /acl/page`, `PUT|DELETE /acl/collections/<id>`,
+`PUT /acl/gate`; body `{principals?, users?, classification?, sources?}`),
+`/meetings` (push riunioni),
 `/wiki/tree|page|refresh`, `/search`, `/graph`, `/catalog/drain`,
 `/skill/status|install`, `/auth/profiles`, `/auth/detect`,
 `/auth/login` (+`/status`: login interattivo, browser sulla macchina del
 server). Bearer opzionale (`api_auth_token` in config.json).
+
+### Accesso multi-utente (LDAP / Active Directory)
+
+Con `identity_provider: "ldap"` il server smette di essere single-user:
+
+- **Login una volta**: `POST /identity/login {username, password}` fa il
+  bind LDAP e restituisce un token di sessione (scade dopo
+  `session_idle_min` di inattività e comunque dopo `session_max_hours`);
+  le richieste successive usano `Authorization: Bearer <token>` e non
+  toccano più LDAP. `POST /identity/logout`, `GET /identity/whoami`,
+  `POST /identity/refresh` (ricarica subito i ruoli dopo un nuovo permesso).
+- **Ruoli**: gruppi LDAP (`memberOf`) → ruoli ACL via `identity_role_map`
+  (DN confrontati senza badare a maiuscole/spazi), in cache per
+  `entitlement_cache_ttl_s`. Il ruolo `admin` è richiesto per tutte le
+  route di gestione (progetti, import, ingest, update, sources, profili
+  auth, skill, catalogazione, riunioni): gli altri utenti possono solo
+  leggere e cercare.
+- **Chiave applicazione separata**: se `api_auth_token` è impostato, il
+  client la manda in `X-Wikibridge-Key` (non più in `Authorization`, che
+  porta la sessione dell'utente).
+- **Protezioni**: stesso messaggio per ogni login fallito (niente
+  enumerazione degli account), limite di tentativi per utente e per IP
+  (`login_max_failures_user` va tenuto sotto la soglia di blocco di AD),
+  `ldap://` rifiutato senza `ldap_start_tls` (`ldaps://` consigliato,
+  `ldap_ca_file` per la CA), avvio rifiutato se `api_host` non è loopback
+  senza `api_tls_cert`/`api_tls_key` o `behind_tls_proxy`, CORS limitato a
+  `cors_origins`, `/health` anonimo senza dettagli.
+
+### Autorizzazioni sui contenuti (ACL)
+
+Attive per progetto con `wikibridge acl enforce on` (default globale
+`acl_enforcement`) e solo con un identity provider configurato. Le ACL
+sono **per riferimento**: un blocco porta un `acl_id` condiviso da tutti i
+blocchi con le stesse autorizzazioni, e le clausole di livello superiore
+stanno in `acl.json` del progetto, lette a ogni richiesta.
+
+| Livello | Comando | Effetto di una modifica |
+|---|---|---|
+| Gate di progetto | `acl gate --role R --user U` | chi non lo soddisfa non vede nemmeno il progetto (404) |
+| Collezione (ramo: import, cartelle, liste di file) | `acl collection ID --role R --user U --classification C --source imp-0001` | scrittura su `acl.json`, **nessuna reindicizzazione**, effetto immediato |
+| Documento | `acl page sources/x.md --role R --user U --classification C` | una riga dell'indice, testo e versione invariati, effetto immediato |
+
+- **Intersezione**: un documento può solo restringere la sua collezione
+  (servono entrambe le clausole); senza alcuna clausola è visibile solo
+  se `public` (default-deny), all'admin sempre.
+- **Persona singola**: `--user mario` diventa il principal
+  `user:<objectGUID>` (stabile anche se l'account viene rinominato); un
+  permesso concesso dopo l'ingestione vale dalla richiesta successiva.
+- **Classificazione**: `public < internal < confidential < restricted`;
+  un utente vede fino al livello `default_clearance`, o superiore se ha un
+  gruppo mappato a `clearance:<livello>` in `identity_role_map`.
+- **Cosa vede chi non è admin**: ricerca, albero, pagine e grafo filtrati;
+  le pagine entità/concetto mostrano solo i segmenti derivati da source
+  visibili; `index.md` è generato per l'utente; `overview.md`, `log.md`,
+  riunioni, sintesi e testo legacy non attribuibile sono solo per l'admin
+  (`wikibridge catalog-rebuild` ricataloga tutto per segmenti e rimuove il
+  testo legacy, al costo di una chiamata LLM per source).
+- **Limite**: le ACL valgono per chi passa dall'API. Un agente o un
+  processo che legge `data/` direttamente dal disco le scavalca: in
+  multi-utente `data/` va resa leggibile solo all'account del servizio.
+
+```json
+{
+  "identity_provider": "ldap",
+  "ldap_url": "ldaps://dc.azienda.local",
+  "ldap_base_dn": "dc=azienda,dc=local",
+  "ldap_bind_dn": "cn=svc-wikibridge,ou=service,dc=azienda,dc=local",
+  "ldap_bind_password": "env:WIKIBRIDGE_LDAP_PW",
+  "identity_role_map": {
+    "CN=Legal,OU=Groups,DC=azienda,DC=local": "team-legal",
+    "CN=Wikibridge-Admins,OU=Groups,DC=azienda,DC=local": "admin"
+  }
+}
+```
 
 ## Integrazione callAPIcall
 

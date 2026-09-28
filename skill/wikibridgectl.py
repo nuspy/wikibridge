@@ -76,8 +76,8 @@ def main() -> int:
     if cmd == "ensure-llmwiki":
         script = REPO / "scripts" / "ensure_llmwiki.py"
         return subprocess.run([sys.executable, str(script)]).returncode
-    # comandi della CLI: project/import/ingest/search/sync/refresh/
-    # catalog-apply/catalog-drain/graph/index/auth/serve
+    # comandi della CLI: project/import/ingest/search/sync/update/sources/
+    # refresh/catalog-apply/catalog-drain/graph/index/auth/serve
     # --project è un'opzione GLOBALE della CLI: va prima del comando
     if "--project" in argv:
         i = argv.index("--project")

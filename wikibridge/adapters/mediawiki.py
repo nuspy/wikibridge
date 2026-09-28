@@ -16,7 +16,7 @@ import logging
 import re
 from urllib.parse import quote, urlparse
 
-from .base import PageContent, PageRef, SourceAdapter
+from .base import PageContent, PageGoneError, PageRef, SourceAdapter
 from ..convert.html_md import html_to_markdown
 
 log = logging.getLogger("wikibridge.mediawiki")
@@ -26,6 +26,7 @@ _WIKI_PATH_RE = re.compile(r"/(?:wiki|index\.php)(?:/|\?title=)([^?&#]+)")
 
 class MediaWikiAdapter(SourceAdapter):
     name = "mediawiki"
+    LISTING_SCOPES = frozenset({"subtree", "space"})
 
     def __init__(self, session, limits):
         super().__init__(session, limits)
@@ -78,6 +79,8 @@ class MediaWikiAdapter(SourceAdapter):
         r.raise_for_status()
         data = r.json()
         if "error" in data:
+            if data["error"].get("code") == "missingtitle":
+                raise PageGoneError(data["error"].get("info", "missingtitle"))
             raise RuntimeError(f"MediaWiki API: {data['error'].get('info')}")
         return data
 
@@ -170,6 +173,7 @@ class MediaWikiAdapter(SourceAdapter):
 
     def fetch(self, ref: PageRef) -> PageContent:
         title = ref.id or self._title_from_url(ref.url)
+        ref.id = title
         data = self._call(action="parse", page=title,
                           prop="text|revid|links|displaytitle",
                           disableeditsection=1, disabletoc=1, redirects=1)

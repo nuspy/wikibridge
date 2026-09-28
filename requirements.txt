@@ -8,3 +8,5 @@ flask-cors>=4.0
 python-slugify>=8.0
 pyyaml>=6.0
 browser-cookie3>=0.19   # cattura cookie SSO dal browser (auth login, tipo cookie)
+ldap3>=2.9               # identity provider LDAP/Active Directory (identity.py)
+waitress>=3.0            # server WSGI di produzione per `wikibridge serve`

@@ -4,6 +4,7 @@ Registry in data/projects.json: {"active": "<slug>", "projects": {slug: {...}}}.
 Ogni progetto vive in data/projects/<slug>/ con:
   project.json   metadati
   imports.json   storico import (gestito da importer.py)
+  ingests.json   sorgenti file locali registrate (gestito da updater.py)
   index.db       indice FTS5 (search.py)
   wiki/          la LLM Wiki (writer.py): index.md, overview.md, log.md,
                  sources/, entities/, concepts/, syntheses/, meetings/
@@ -38,6 +39,8 @@ class Project:
     name: str
     description: str = ""
     created: str = ""
+    acl_enforcement: bool = False
+    default_acl_classification: str = "internal"
     root: Path = field(default=None, repr=False)  # type: ignore[assignment]
 
     @property
@@ -60,6 +63,10 @@ class Project:
     def imports_json(self) -> Path:
         return self.root / "imports.json"
 
+    @property
+    def ingests_json(self) -> Path:
+        return self.root / "ingests.json"
+
     def ensure_layout(self) -> None:
         for d in (self.root, self.graph_dir, self.pending_dir):
             d.mkdir(parents=True, exist_ok=True)
@@ -72,6 +79,7 @@ class Project:
             "name": self.name,
             "description": self.description,
             "created": self.created,
+            "acl_enforcement": self.acl_enforcement,
         }
 
 
@@ -104,6 +112,10 @@ class ProjectStore:
         return Project(slug=slug, name=rec.get("name", slug),
                        description=rec.get("description", ""),
                        created=rec.get("created", ""),
+                       # non impostato nel progetto = default globale
+                       acl_enforcement=bool(rec.get("acl_enforcement",
+                                                    self._cfg.acl_enforcement)),
+                       default_acl_classification=self._cfg.default_acl_classification,
                        root=self._project_root(slug))
 
     # -- API ----------------------------------------------------------------
@@ -156,6 +168,23 @@ class ProjectStore:
             reg["active"] = slug
             self._save(reg)
         return self.get(slug)
+
+    def set_acl_enforcement(self, slug: str, enabled: bool) -> Project:
+        """Attiva/disattiva il filtro ACL sulla ricerca per un progetto."""
+        if slug == DEFAULT_SLUG:
+            self.get(DEFAULT_SLUG)        # il default nasce al primo accesso
+        with self._lock:
+            reg = self._load()
+            if slug not in reg["projects"]:
+                raise KeyError(f"progetto inesistente: {slug}")
+            reg["projects"][slug]["acl_enforcement"] = bool(enabled)
+            self._save(reg)
+            proj = self._from_record(slug, reg["projects"][slug])
+        proj.ensure_layout()
+        (proj.root / "project.json").write_text(
+            json.dumps(proj.to_dict(), ensure_ascii=False, indent=1),
+            encoding="utf-8")
+        return proj
 
     def active_slug(self) -> str:
         with self._lock:

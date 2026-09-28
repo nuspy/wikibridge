@@ -23,6 +23,7 @@ from .brain import make_brain
 from .config import Config
 from .projects import Project
 from .wiki.search import SearchIndex
+from .wiki.segments import render_body, split_body
 from .wiki.writer import WikiWriter, now_iso, page_slug
 
 log = logging.getLogger("wikibridge.catalog")
@@ -111,9 +112,65 @@ def merge_partials(partials: list[dict]) -> dict:
             "relations": relations}
 
 
+# Ogni riassunto nelle pagine entità/concetto è un segmento marcato con la
+# source da cui deriva (wiki/segments.py): un aggiornamento della source
+# SOSTITUISCE il suo segmento e la rimozione della source toglie solo il
+# suo contributo.
+
+
+def remove_source_contributions(project: Project, source_rel: str) -> int:
+    """Toglie da entità/concetti/relazioni tutto ciò che deriva da una
+    source. Un'entità senza più contributi viene eliminata. Ritorna il
+    numero di pagine toccate."""
+    writer = WikiWriter(project)
+    index = SearchIndex(project)
+    touched = 0
+    for section in ("entities", "concepts"):
+        for p in sorted((project.wiki_dir / section).glob("*.md")):
+            rel = f"{section}/{p.name}"
+            fm, body = writer.read_page(rel)
+            mentions = list(fm.get("mentions") or [])
+            if source_rel not in mentions:
+                continue
+            mentions.remove(source_rel)
+            rest, segments = split_body(body)
+            segments.pop(source_rel, None)
+            if not mentions:
+                # tutto il testo legacy veniva da sources ormai rimosse
+                rest = f"# {fm.get('title', p.stem)}"
+            touched += 1
+            if not mentions and not segments:
+                p.unlink()
+                index.remove(rel)
+                continue
+            fm.update(mentions=mentions, updated=now_iso())
+            new_body = render_body(rest, segments, mentions)
+            writer.write_page(section, p.stem, fm, new_body)
+            index.upsert_page(rel, section, fm, new_body)
+
+    rel_store = project.graph_dir / "relations.jsonl"
+    if rel_store.is_file():
+        lines = rel_store.read_text(encoding="utf-8").splitlines()
+
+        def keep(ln: str) -> bool:
+            try:
+                return json.loads(ln).get("source") != source_rel
+            except ValueError:
+                return True
+
+        kept = [ln for ln in lines if ln.strip() and keep(ln)]
+        if len(kept) != len(lines):
+            tmp = rel_store.with_suffix(".tmp")
+            tmp.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+            tmp.replace(rel_store)
+    return touched
+
+
 def apply_catalog_result(project: Project, source_rel: str,
                          result: dict) -> dict:
-    """Scrive entità/concetti nel wiki (merge con le pagine esistenti)."""
+    """Scrive entità/concetti nel wiki. I contributi precedenti della
+    stessa source vengono prima rimossi e poi sostituiti da quelli nuovi."""
+    remove_source_contributions(project, source_rel)
     writer = WikiWriter(project)
     index = SearchIndex(project)
     written = {"entities": 0, "concepts": 0}
@@ -125,19 +182,13 @@ def apply_catalog_result(project: Project, source_rel: str,
                 continue
             slug = page_slug(name)
             rel = f"{section}/{slug}.md"
-            mentions: list[str] = []
-            body_intro = item.get("summary", "")
-            existing_fm: dict = {}
             try:
                 existing_fm, old_body = writer.read_page(rel)
-                mentions = existing_fm.get("mentions", []) or []
-                # mantieni il corpo già arricchito, aggiungi solo se nuovo
-                if body_intro and body_intro not in old_body:
-                    body = old_body.strip() + "\n\n" + body_intro
-                else:
-                    body = old_body
             except (FileNotFoundError, OSError):
-                body = f"# {name}\n\n{body_intro}"
+                existing_fm, old_body = {}, f"# {name}"
+            rest, segments = split_body(old_body)
+            segments[source_rel] = item.get("summary", "").strip()
+            mentions = list(existing_fm.get("mentions") or [])
             if source_rel not in mentions:
                 mentions.append(source_rel)
             fm = {
@@ -147,14 +198,9 @@ def apply_catalog_result(project: Project, source_rel: str,
                 "mentions": mentions,
                 "updated": now_iso(),
             }
-            mentions_md = "\n".join(f"- [[{m}]]" for m in mentions)
-            full_body = (body.strip() + "\n\n## Menzioni\n\n" + mentions_md
-                         if "## Menzioni" not in body
-                         else re.sub(r"## Menzioni\n.*", "## Menzioni\n\n" + mentions_md,
-                                     body, flags=re.DOTALL))
-            writer.write_page(section, slug, fm, full_body)
-            fm2, body2 = writer.read_page(rel)
-            index.upsert(rel, section, name, body2)
+            new_body = render_body(rest or f"# {name}", segments, mentions)
+            writer.write_page(section, slug, fm, new_body)
+            index.upsert_page(rel, section, fm, new_body)
             written[kind] += 1
 
     relations = result.get("relations", [])
@@ -214,6 +260,31 @@ def make_catalog_hook(cfg: Config):
             log.warning("catalogazione fallita per %s: %s", source_rel, e)
 
     return hook
+
+
+def rebuild_catalog(cfg: Config, project: Project, hook=None) -> dict:
+    """Ricataloga tutte le source da zero: elimina entità, concetti e
+    relazioni (compreso il testo legacy non attribuibile, che con le ACL
+    attive è visibile solo all'admin) e li rigenera per segmenti. Costa
+    una catalogazione LLM per source; con brain=agent accoda i task."""
+    hook = hook or make_catalog_hook(cfg)
+    if hook is None:
+        raise RuntimeError("brain_mode=none: serve un LLM per ricatalogare")
+    index = SearchIndex(project)
+    removed = 0
+    for section in ("entities", "concepts"):
+        for p in sorted((project.wiki_dir / section).glob("*.md")):
+            index.remove(f"{section}/{p.name}")
+            p.unlink()
+            removed += 1
+    (project.graph_dir / "relations.jsonl").unlink(missing_ok=True)
+    sources = sorted((project.wiki_dir / "sources").glob("*.md"))
+    for p in sources:
+        hook(project, f"sources/{p.name}")
+    WikiWriter(project).append_log(
+        f"catalogo ricostruito: {removed} pagine derivate eliminate, "
+        f"{len(sources)} source ricatalogate")
+    return {"removed_pages": removed, "sources": len(sources)}
 
 
 def drain_pending(cfg: Config, project: Project) -> dict:

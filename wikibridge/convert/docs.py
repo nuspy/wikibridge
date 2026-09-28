@@ -13,7 +13,6 @@ from pathlib import Path
 
 from ..config import Config
 from ..projects import Project, ProjectStore
-from ..wiki.search import SearchIndex
 from ..wiki.writer import WikiWriter
 
 log = logging.getLogger("wikibridge.docs")
@@ -42,53 +41,25 @@ def convert_document(path: Path) -> str:
 def ingest_path(cfg: Config, project: Project, path: Path, *,
                 recursive: bool = False, catalog=None,
                 progress=None) -> dict:
-    """Importa un file o una directory. Ritorna il riepilogo."""
-    files: list[Path]
-    if path.is_dir():
-        pattern = "**/*" if recursive else "*"
-        files = sorted(p for p in path.glob(pattern)
-                       if p.is_file() and p.suffix.lower() in SUPPORTED_EXT)
-    elif path.is_file():
-        files = [path]
-    else:
+    """Importa un file o una directory e la registra come sorgente
+    aggiornabile (ingests.json): reingerire lo stesso percorso aggiorna
+    le pagine esistenti invece di duplicarle. Ritorna il riepilogo."""
+    from ..updater import update_files_source, register_paths
+
+    if not path.exists():
         raise FileNotFoundError(str(path))
-
+    targets, errors = register_paths(project, [str(path)], recursive=recursive)
+    checked = imported = 0
+    for source_id, keys in targets:
+        r = update_files_source(cfg, project, source_id, only_keys=keys,
+                                catalog=catalog, progress=progress)
+        checked += r.checked
+        imported += r.added + r.updated + r.renamed + r.unchanged
+        errors += r.errors
     writer = WikiWriter(project)
-    index = SearchIndex(project)
-    done, skipped, errors = 0, 0, []
-    for i, f in enumerate(files):
-        if progress:
-            progress({"phase": "converting", "pages": i,
-                      "max_pages": len(files), "detail": f.name})
-        if f.stat().st_size > MAX_DOC_MB * 1024 * 1024:
-            errors.append(f"{f.name}: oltre {MAX_DOC_MB} MB")
-            skipped += 1
-            continue
-        try:
-            markdown = convert_document(f)
-        except Exception as e:  # noqa: BLE001 — un file rotto non ferma il batch
-            errors.append(f"{f.name}: {e}")
-            skipped += 1
-            continue
-        if not markdown.strip():
-            errors.append(f"{f.name}: conversione vuota")
-            skipped += 1
-            continue
-        p, changed = writer.write_source(
-            title=f.stem, markdown=markdown, url=f.as_uri(),
-            source_kind="document", import_id="ingest",
-            extra_fm={"original_path": str(f), "format": f.suffix.lower()})
-        done += 1
-        if changed:
-            rel = f"sources/{p.name}"
-            fm, body = writer.read_page(rel)
-            index.upsert(rel, "sources", fm.get("title", ""), body)
-            if catalog:
-                catalog(project, rel)
-
-    writer.append_log(f"ingest {path}: {done} documenti, {skipped} saltati")
+    writer.append_log(f"ingest {path}: {imported} documenti, {len(errors)} errori")
     writer.rebuild_index()
-    return {"files": len(files), "imported": done, "skipped": skipped,
+    return {"files": checked, "imported": imported, "skipped": len(errors),
             "errors": errors}
 
 

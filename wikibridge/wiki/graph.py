@@ -61,6 +61,19 @@ new vis.Network(document.getElementById("graph"), {{nodes, edges}}, {{
 """
 
 
+def filter_graph(graph: dict, visible_pages: set[str],
+                 visible_sources: set[str]) -> dict:
+    """Vista del grafo per chi vede solo alcune pagine: nodi visibili,
+    archi tra nodi visibili, relazioni solo se la source che le ha
+    prodotte è visibile."""
+    nodes = [n for n in graph["nodes"] if n["id"] in visible_pages]
+    ids = {n["id"] for n in nodes}
+    edges = [e for e in graph["edges"]
+             if e["from"] in ids and e["to"] in ids
+             and ("source" not in e or e["source"] in visible_sources)]
+    return {"nodes": nodes, "edges": edges}
+
+
 def build_graph(project: Project) -> dict:
     writer = WikiWriter(project)
     nodes: dict[str, dict] = {}
@@ -99,7 +112,8 @@ def build_graph(project: Project) -> dict:
             dst = name_to_id.get(page_slug(str(r.get("to", ""))))
             if src and dst and src != dst:
                 edges.append({"from": src, "to": dst,
-                              "label": str(r.get("kind", ""))[:20]})
+                              "label": str(r.get("kind", ""))[:20],
+                              "source": r.get("source", "")})
 
     graph = {"nodes": list(nodes.values()), "edges": edges}
     project.graph_dir.mkdir(parents=True, exist_ok=True)

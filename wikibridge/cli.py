@@ -6,6 +6,9 @@ Comandi:
   index                               ricostruisce indice FTS + index.md
   import <url> [...]                  import da wiki esterna   (fase P2+)
   sync <import-id>                    sync incrementale        (fase P2+)
+  update [--import|--ingest|--path]   controllo aggiornamenti on-demand di
+                                      rami wiki, cartelle e singoli file
+  sources                             sorgenti aggiornabili del progetto
   refresh <wiki-path>                 refresh puntuale pagina  (fase P2+)
   ingest <file|dir> [...]             import documenti         (fase P5)
   auth add|list|remove|login|detect   profili di autenticazione(fase P2)
@@ -80,6 +83,59 @@ def main(argv: list[str] | None = None) -> int:
 
     p_sync = sub.add_parser("sync", help="sync incrementale di un import")
     p_sync.add_argument("import_id")
+
+    p_upd = sub.add_parser(
+        "update", help="controlla e applica gli aggiornamenti delle sorgenti "
+                       "(senza opzioni: tutte quelle del progetto)")
+    p_upd.add_argument("--import", dest="imports", action="append",
+                       metavar="ID", help="solo questo ramo wiki (ripetibile)")
+    p_upd.add_argument("--ingest", dest="ingests", action="append",
+                       metavar="ID", help="solo questa sorgente file (ripetibile)")
+    p_upd.add_argument("--path", dest="paths", action="append", metavar="PATH",
+                       help="file o cartella da controllare (ripetibile); "
+                            "i nuovi vengono registrati")
+    p_upd.add_argument("--all-projects", action="store_true",
+                       help="tutte le sorgenti di tutti i progetti (uso cron)")
+    p_upd.add_argument("--no-discover", action="store_true",
+                       help="non cercare pagine nuove nei rami wiki")
+    p_upd.add_argument("--dry-run", action="store_true",
+                       help="mostra cosa cambierebbe senza scrivere")
+    p_upd.add_argument("--no-catalog", action="store_true")
+
+    sub.add_parser("sources", help="elenca le sorgenti aggiornabili del progetto")
+
+    sub.add_parser("catalog-rebuild",
+                   help="ricataloga tutte le source (rimuove il testo legacy "
+                        "non attribuibile; costa una chiamata LLM per source)")
+
+    p_acl = sub.add_parser("acl", help="autorizzazioni (documenti, collezioni, gate)")
+    acl_sub = p_acl.add_subparsers(dest="acl_cmd", required=True)
+
+    def _principal_args(p):
+        p.add_argument("--role", action="append", default=[], help="ruolo (ripetibile)")
+        p.add_argument("--user", action="append", default=[],
+                       help="username da autorizzare a persona singola (ripetibile)")
+
+    a_show = acl_sub.add_parser("show", help="politica del progetto (e di una pagina)")
+    a_show.add_argument("--path", help="es. sources/x.md")
+    a_page = acl_sub.add_parser("page", help="principal propri di un documento "
+                                             "(sostituisce quelli esistenti)")
+    a_page.add_argument("path")
+    _principal_args(a_page)
+    a_page.add_argument("--classification",
+                        choices=["public", "internal", "confidential", "restricted"])
+    a_coll = acl_sub.add_parser("collection", help="crea/modifica una collezione di sorgenti")
+    a_coll.add_argument("id")
+    _principal_args(a_coll)
+    a_coll.add_argument("--classification", default="internal",
+                        choices=["public", "internal", "confidential", "restricted"])
+    a_coll.add_argument("--source", action="append", default=[],
+                        help="id di import o sorgente file (ripetibile)")
+    a_coll.add_argument("--delete", action="store_true")
+    a_gate = acl_sub.add_parser("gate", help="chi può vedere il progetto (vuoto = tutti)")
+    _principal_args(a_gate)
+    a_enf = acl_sub.add_parser("enforce", help="attiva/disattiva il filtro ACL")
+    a_enf.add_argument("state", choices=["on", "off"])
 
     p_ref = sub.add_parser("refresh", help="refresh puntuale di una pagina")
     p_ref.add_argument("wiki_path", help="es. sources/mia-pagina.md")
@@ -186,6 +242,41 @@ def main(argv: list[str] | None = None) -> int:
         from .importer import sync_import_cli
         return sync_import_cli(cfg, store, args)
 
+    if args.cmd == "update":
+        from .updater import check_updates
+        catalog = None
+        if not (args.no_catalog or args.dry_run):
+            from .catalog import make_catalog_hook
+            catalog = make_catalog_hook(cfg)
+        projects = store.list() if args.all_projects else [store.get(args.project)]
+        reports = [check_updates(cfg, p, imports=args.imports,
+                                 ingests=args.ingests, paths=args.paths,
+                                 discover=not args.no_discover,
+                                 dry_run=args.dry_run, catalog=catalog)
+                   for p in projects]
+        _print(reports if args.all_projects else reports[0])
+        # exit code utile a cron/agenti: 1 se qualche sorgente ha errori
+        return 1 if any(r["totals"].get("errors") for r in reports) else 0
+
+    if args.cmd == "sources":
+        from .updater import list_sources
+        proj = store.get(args.project)
+        _print({"project": proj.slug, "sources": list_sources(proj)})
+        return 0
+
+    if args.cmd in ("catalog-rebuild", "acl"):
+        from .identity import IdentityError
+        try:
+            if args.cmd == "acl":
+                return _acl_cli(cfg, store, args)
+            from .catalog import rebuild_catalog
+            _print(rebuild_catalog(cfg, store.get(args.project)))
+            return 0
+        except (ValueError, KeyError, FileNotFoundError, RuntimeError,
+                IdentityError) as e:
+            _print({"error": str(e)})
+            return 2
+
     if args.cmd == "refresh":
         from .importer import refresh_page_cli
         return refresh_page_cli(cfg, store, args)
@@ -211,6 +302,31 @@ def main(argv: list[str] | None = None) -> int:
         return r.returncode
 
     return 1
+
+
+def _acl_cli(cfg, store: ProjectStore, args) -> int:
+    from . import acl_admin
+    from .identity import build_identity_provider
+    proj = store.get(args.project)
+    if args.acl_cmd == "show":
+        _print(acl_admin.show(proj, args.path))
+        return 0
+    if args.acl_cmd == "enforce":
+        _print(store.set_acl_enforcement(proj.slug, args.state == "on").to_dict())
+        return 0
+    provider = (build_identity_provider(cfg)
+                if args.user and cfg.identity_provider != "none" else None)
+    principals = acl_admin.principals_from(args.role, args.user, provider)
+    if args.acl_cmd == "page":
+        _print(acl_admin.set_page_acl(proj, args.path, principals, args.classification))
+    elif args.acl_cmd == "collection":
+        _print(acl_admin.delete_collection(proj, args.id) if args.delete else
+               acl_admin.set_collection(proj, args.id, principals=principals,
+                                        classification=args.classification,
+                                        sources=args.source))
+    elif args.acl_cmd == "gate":
+        _print(acl_admin.set_gate(proj, principals))
+    return 0
 
 
 if __name__ == "__main__":

@@ -37,6 +37,9 @@ syntheses/, meetings/), `graph/`, `index.db` (ricerca FTS), `_pending/`
 | cerca nella conoscenza | `wikibridgectl.py search "<query>" [--project slug]` |
 | gestione progetti | `wikibridgectl.py project create\|list\|switch\|delete ...` |
 | sync di un import | `wikibridgectl.py sync <import-id>` |
+| aggiorna la conoscenza (tutte le sorgenti: rami wiki, cartelle, file) | `wikibridgectl.py update [--project slug]` — controlla, riscrive solo ciò che è cambiato, niente duplicati |
+| aggiorna solo alcune sorgenti | `wikibridgectl.py update --import <id> \| --ingest <id> \| --path <file\|dir>` (ripetibili; `--dry-run` per vedere cosa cambierebbe) |
+| elenca le sorgenti aggiornabili | `wikibridgectl.py sources [--project slug]` |
 | refresh di una pagina | `wikibridgectl.py refresh <wiki-path>` |
 | /wiki-install-llmwiki — installa la skill llm-wiki | `wikibridgectl.py ensure-llmwiki` |
 | profili auth | `wikibridgectl.py auth add <nome> --type bearer\|basic\|header\|cookie\|oauth2` |

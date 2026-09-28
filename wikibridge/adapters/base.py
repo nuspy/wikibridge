@@ -32,8 +32,15 @@ class PageContent:
     attachments: list[dict] = field(default_factory=list)
 
 
+class PageGoneError(Exception):
+    """La pagina non esiste più alla sorgente (cancellata o rinominata)."""
+
+
 class SourceAdapter(ABC):
     name: str = "base"
+    # scope per cui resolve() restituisce l'elenco COMPLETO del ramo (serve
+    # all'updater per scoprire pagine nuove e sparite senza rifare la BFS)
+    LISTING_SCOPES: frozenset[str] = frozenset()
 
     def __init__(self, session: requests.Session, limits: ImportLimits):
         self.session = session
