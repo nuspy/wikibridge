@@ -29,6 +29,7 @@ import os
 import threading
 import time
 from collections import Counter, deque
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -39,6 +40,7 @@ from .adapters.base import PageGoneError, PageRef
 from .auth import AuthRequiredError
 from .config import Config
 from .convert.docs import MAX_DOC_MB, SUPPORTED_EXT, convert_document
+from .filelock import LockTimeout, file_lock, touch
 from .importer import (ImportsLog, _now, import_limits, open_import_adapter,
                        wiki_doc_id)
 from .projects import Project
@@ -69,10 +71,15 @@ class SourceReport:
     renamed: int = 0
     missing: int = 0           # assenti, in attesa di conferma
     removed: int = 0
+    feed: bool = False         # modifiche lette dal change feed della sorgente
+    acl_updated: int = 0       # permessi alla fonte cambiati (testo invariato o no)
+    acl_unreadable: int = 0    # permessi non leggibili: pagine solo admin
+    acl_unmapped: list[str] = field(default_factory=list)  # nomi non tradotti
     errors: list[str] = field(default_factory=list)
 
     def changed(self) -> bool:
-        return bool(self.updated or self.added or self.renamed or self.removed)
+        return bool(self.updated or self.added or self.renamed or self.removed
+                    or self.acl_updated)
 
 
 # -- registro delle sorgenti file ------------------------------------------------
@@ -130,16 +137,55 @@ class IngestsLog:
                        encoding="utf-8")
         tmp.replace(self._path)
 
-    def upsert(self, record: dict) -> None:
-        with self._lock:
+    @contextmanager
+    def _locked(self):
+        """Lock nel processo e tra processi (CLI, server, agenti in WSL)."""
+        with self._lock, file_lock(Path(str(self._path) + ".lock")):
+            yield
+
+    def add_path(self, path: str, permissions: bool = False) -> dict:
+        """Aggiunge un file alla lista di singoli file (lettura, modifica e
+        scrittura sotto un solo lock)."""
+        with self._locked():
             records = self.load()
-            for i, r in enumerate(records):
-                if r["id"] == record["id"]:
-                    records[i] = record
-                    break
-            else:
-                records.append(record)
-            self._save(records)
+            src = next((r for r in records if r["id"] == DEFAULT_FILES_SOURCE), None)
+            if src is None:
+                src = {"id": DEFAULT_FILES_SOURCE, "kind": "files", "paths": [],
+                       "created": _now(), "last_check": None, "state": "ok",
+                       "files": {}}
+            if file_key(path) not in {file_key(p) for p in src["paths"]}:
+                src["paths"].append(path)
+            src["permissions"] = src.get("permissions") or permissions
+            self._upsert_unlocked(src)
+            return src
+
+    def _upsert_unlocked(self, record: dict) -> None:
+        records = self.load()
+        for i, r in enumerate(records):
+            if r["id"] == record["id"]:
+                records[i] = record
+                break
+        else:
+            records.append(record)
+        self._save(records)
+
+    def upsert(self, record: dict) -> None:
+        with self._locked():
+            self._upsert_unlocked(record)
+
+    def save_after_update(self, src: dict) -> None:
+        """Salva il risultato di un aggiornamento senza perdere ciò che altri
+        processi hanno aggiunto nel frattempo (percorsi della lista di file,
+        ricorsione di una cartella)."""
+        with self._locked():
+            current = next((r for r in self.load() if r["id"] == src["id"]), None)
+            if current:
+                seen = {file_key(p) for p in src.get("paths", [])}
+                src["paths"] = src.get("paths", []) + [
+                    p for p in current.get("paths", []) if file_key(p) not in seen]
+                src["recursive"] = src.get("recursive") or current.get("recursive")
+                src["permissions"] = src.get("permissions") or current.get("permissions")
+            self._upsert_unlocked(src)
 
     def get(self, source_id: str) -> dict:
         for r in self.load():
@@ -147,31 +193,40 @@ class IngestsLog:
                 return r
         raise KeyError(f"sorgente file inesistente: {source_id}")
 
-    def register_dir(self, root: Path, recursive: bool) -> dict:
+    def register_dir(self, root: Path, recursive: bool, permissions: bool = False) -> dict:
         key = file_key(root)
-        for r in self.load():
-            if r["kind"] == "dir" and file_key(r["root"]) == key:
-                if recursive and not r.get("recursive"):
-                    r["recursive"] = True
-                    self.upsert(r)
-                return r
-        records = self.load()
-        rec = {"id": f"ing-{len(records) + 1:04d}", "kind": "dir",
-               "root": str(Path(root).resolve()), "recursive": recursive,
-               "created": _now(), "last_check": None, "state": "ok",
-               "files": {}}
-        self.upsert(rec)
-        return rec
+        with self._locked():                 # due processi: un solo nuovo id
+            records = self.load()
+            for r in records:
+                if r["kind"] == "dir" and file_key(r["root"]) == key:
+                    if (recursive and not r.get("recursive")) or \
+                            (permissions and not r.get("permissions")):
+                        r["recursive"] = r.get("recursive") or recursive
+                        r["permissions"] = r.get("permissions") or permissions
+                        self._upsert_unlocked(r)
+                    return r
+            ids = {r["id"] for r in records}
+            n = len(records) + 1
+            while f"ing-{n:04d}" in ids:
+                n += 1
+            rec = {"id": f"ing-{n:04d}", "kind": "dir",
+                   "root": str(Path(root).resolve()), "recursive": recursive,
+                   "permissions": permissions,
+                   "created": _now(), "last_check": None, "state": "ok",
+                   "files": {}}
+            self._upsert_unlocked(rec)
+            return rec
 
     def files_source(self) -> dict:
         """La sorgente 'lista di singoli file' di default (creata se serve)."""
-        try:
-            return self.get(DEFAULT_FILES_SOURCE)
-        except KeyError:
+        with self._locked():
+            for r in self.load():
+                if r["id"] == DEFAULT_FILES_SOURCE:
+                    return r
             rec = {"id": DEFAULT_FILES_SOURCE, "kind": "files", "paths": [],
                    "created": _now(), "last_check": None, "state": "ok",
                    "files": {}}
-            self.upsert(rec)
+            self._upsert_unlocked(rec)
             return rec
 
     def source_tracking(self, key: str) -> dict | None:
@@ -234,12 +289,52 @@ def _is_gone(exc: Exception) -> bool:
     return False
 
 
+JOB_STALE_S = 3600
+
+
+def _with_source_lock(project: Project, source_id: str, kind: str, dry_run: bool,
+                      progress: Progress, run) -> SourceReport:
+    """Un solo aggiornamento alla volta per sorgente, anche tra processi
+    diversi (server, CLI, cron, agenti): il secondo riceve state="busy"
+    invece di lavorare in parallelo e sovrascrivere i risultati del primo."""
+    if dry_run:
+        return run(progress)
+    lock_path = project.root / "locks" / f"{source_id}.lock"
+    ctx = file_lock(lock_path, timeout=0, stale_after=JOB_STALE_S)
+    try:
+        ctx.__enter__()
+    except LockTimeout as e:
+        return SourceReport(kind=kind, id=source_id, target="", state="busy",
+                            errors=[f"sorgente occupata da un altro aggiornamento: {e.holder}"])
+
+    def alive(p: dict) -> None:           # il lock resta "fresco" nei lavori lunghi
+        touch(lock_path)
+        if progress:
+            progress(p)
+    try:
+        return run(alive)
+    finally:
+        ctx.__exit__(None, None, None)
+
+
 def update_import(cfg: Config, project: Project, import_id: str, *,
                   discover: bool = True, dry_run: bool = False,
                   catalog: CatalogHook = None, progress: Progress = None) -> SourceReport:
+    return _with_source_lock(
+        project, import_id, "wiki", dry_run, progress,
+        lambda prog: _update_import(cfg, project, import_id, discover=discover,
+                                    dry_run=dry_run, catalog=catalog, progress=prog))
+
+
+def _update_import(cfg: Config, project: Project, import_id: str, *,
+                   discover: bool, dry_run: bool, catalog: CatalogHook,
+                   progress: Progress) -> SourceReport:
     imports_log = ImportsLog(project)
     rec = imports_log.get(import_id)
     report = SourceReport(kind="wiki", id=import_id, target=rec["url"])
+    # il prossimo change feed parte dall'INIZIO di questo controllo: ciò che
+    # cambia alla fonte mentre il controllo è in corso non va perso
+    started = _now()
     limits = import_limits(cfg, rec)
     writer = WikiWriter(project)
     index = SearchIndex(project)
@@ -275,13 +370,45 @@ def update_import(cfg: Config, project: Project, import_id: str, *,
             reauthed = True
             return adapter.fetch(ref)
 
+    mapper = None
+    if rec.get("permissions"):
+        from .source_acl import make_mapper, read_page_acl
+        mapper = make_mapper(cfg)
+
+    def page_acl(ref: PageRef):
+        """Clausole lette alla fonte (None se i permessi non sono attivi)."""
+        if mapper is None:
+            return None
+        clauses, readable = read_page_acl(adapter, ref, mapper)
+        report.acl_unreadable += 0 if readable else 1
+        return clauses
+
+    def sync_acl(ref: PageRef, rel: str) -> None:
+        """Permessi cambiati alla fonte senza che cambi il testo (in
+        Confluence una restrizione non cambia la versione): aggiorna solo
+        il frontmatter e una riga dell'indice."""
+        clauses = page_acl(ref)
+        if clauses is None:
+            return
+        try:
+            fm, _ = writer.read_page(rel)
+        except (OSError, ValueError):
+            return
+        if (fm.get("acl_source_clauses") or []) == sorted(sorted(set(c)) for c in clauses):
+            return
+        report.acl_updated += 1
+        if not dry_run:
+            fm = writer.update_source_fm(rel, acl_source_clauses=clauses)
+            index.set_doc_acl(rel, fm)
+
     def store(page, rel_path: str | None) -> tuple[str, bool]:
         doc_id = wiki_doc_id(adapter.name, page.ref.url, page.ref.id)
         path, changed = writer.write_source(
             title=page.ref.title or page.ref.url, markdown=page.markdown,
             url=page.ref.url, source_kind="web", import_id=rec["id"],
             revision=page.revision, rel_path=rel_path, doc_id=doc_id,
-            native_id=page.ref.id, extra_fm={"adapter": adapter.name})
+            native_id=page.ref.id, acl_source_clauses=page_acl(page.ref),
+            extra_fm={"adapter": adapter.name})
         rel = f"sources/{path.name}"
         if changed:
             fm, body = writer.read_page(rel)
@@ -305,6 +432,14 @@ def update_import(cfg: Config, project: Project, import_id: str, *,
                 url = ref.url
             in_listing.add(url)
 
+    # change feed: con una ricerca, quali pagine sono cambiate dall'ultimo
+    # controllo; le altre non richiedono una chiamata ciascuna
+    feed = None
+    if rec.get("last_sync"):
+        feed = adapter.changed_ids_since(rec["url"], rec.get("scope", "page"),
+                                         rec["last_sync"])
+    report.feed = feed is not None
+
     # 2. pagine note: cambiate / invariate / sparite
     candidates_missing: list[str] = []
     total = len(known)
@@ -314,16 +449,27 @@ def update_import(cfg: Config, project: Project, import_id: str, *,
                 progress({"phase": "updating", "pages": n, "max_pages": total,
                           "detail": url})
             report.checked += 1
-            # dall'elenco si deduce l'assenza solo per le pagine che ne fanno
-            # parte (depth 0); quelle raggiunte via link si verificano una a una
-            if listing_complete and info.get("depth", 0) == 0 and url not in in_listing:
-                candidates_missing.append(url)
-                continue
             ref = PageRef(id=info.get("native_id", ""), url=url,
                           depth=info.get("depth", 0))
+            # dall'elenco si deduce l'assenza solo per le pagine che ne fanno
+            # parte (depth 0); quelle raggiunte via link si verificano una a
+            # una. Un elenco da indice di ricerca può essere in ritardo: prima
+            # di contarla come sparita si chiede alla sorgente.
+            if listing_complete and info.get("depth", 0) == 0 and url not in in_listing:
+                if adapter.still_in_branch(ref, rec["url"], rec.get("scope", "page")) \
+                        is not True:
+                    candidates_missing.append(url)
+                    continue
+            if (feed is not None and info.get("native_id") and info.get("revision")
+                    and info["native_id"] not in feed):
+                report.unchanged += 1
+                info["missing"] = 0
+                sync_acl(ref, info["path"])
+                continue
             if not adapter.changed_since(ref, info.get("revision")):
                 report.unchanged += 1
                 info["missing"] = 0
+                sync_acl(ref, info["path"])
                 continue
             if dry_run:
                 report.updated += 1
@@ -401,8 +547,10 @@ def update_import(cfg: Config, project: Project, import_id: str, *,
         report.state = "auth_required"
         report.errors.append(str(e))
 
+    if mapper is not None:
+        report.acl_unmapped = sorted(mapper.unmapped)[:100]
     if not dry_run:
-        rec["last_sync"] = _now()
+        rec["last_sync"] = started
         rec["pages"] = len(known)
         imports_log.upsert(rec)
     return report
@@ -426,6 +574,16 @@ def update_files_source(cfg: Config, project: Project, source_id: str, *,
                         only_keys: set[str] | None = None,
                         dry_run: bool = False, catalog: CatalogHook = None,
                         progress: Progress = None) -> SourceReport:
+    return _with_source_lock(
+        project, source_id, "files", dry_run, progress,
+        lambda prog: _update_files_source(cfg, project, source_id, only_keys=only_keys,
+                                          dry_run=dry_run, catalog=catalog,
+                                          progress=prog))
+
+
+def _update_files_source(cfg: Config, project: Project, source_id: str, *,
+                         only_keys: set[str] | None, dry_run: bool,
+                         catalog: CatalogHook, progress: Progress) -> SourceReport:
     ingests = IngestsLog(project)
     src = ingests.get(source_id)
     target = src.get("root") or ", ".join(src.get("paths", []))[:200]
@@ -434,6 +592,41 @@ def update_files_source(cfg: Config, project: Project, source_id: str, *,
     index = SearchIndex(project)
     tracked: dict = src.setdefault("files", {})
 
+    mapper = None
+    if src.get("permissions"):
+        from .source_acl import make_mapper
+        mapper = make_mapper(cfg)
+
+    def file_acl(p: Path):
+        """Clausole NTFS del file (None se i permessi non sono attivi)."""
+        if mapper is None:
+            return None
+        from .adapters.base import AclUnreadable
+        from .ntfs_acl import file_read_acl
+        from .source_acl import UNREADABLE
+        try:
+            return mapper.map(file_read_acl(p))
+        except AclUnreadable as e:
+            log.warning("%s", e)
+            report.acl_unreadable += 1
+            return UNREADABLE
+
+    def sync_file_acl(p: Path, entry: dict) -> None:
+        """Permessi del file cambiati senza che cambi il contenuto."""
+        clauses = file_acl(p)
+        if clauses is None or not entry.get("page"):
+            return
+        try:
+            fm, _ = writer.read_page(entry["page"])
+        except (OSError, ValueError):
+            return
+        if (fm.get("acl_source_clauses") or []) == sorted(sorted(set(c)) for c in clauses):
+            return
+        report.acl_updated += 1
+        if not dry_run:
+            fm = writer.update_source_fm(entry["page"], acl_source_clauses=clauses)
+            index.set_doc_acl(entry["page"], fm)
+
     current = _scan(src)
     if current is None:
         report.state = "unreachable"
@@ -441,7 +634,7 @@ def update_files_source(cfg: Config, project: Project, source_id: str, *,
         if not dry_run:
             src["state"] = "unreachable"
             src["last_check"] = _now()
-            ingests.upsert(src)
+            ingests.save_after_update(src)
         return report
     if only_keys is not None:
         current = {k: p for k, p in current.items() if k in only_keys}
@@ -490,6 +683,7 @@ def update_files_source(cfg: Config, project: Project, source_id: str, *,
                     and entry.get("mtime_ns") == st.st_mtime_ns
                     and entry.get("path") == str(p)):
                 report.unchanged += 1
+                sync_file_acl(p, entry)
                 continue
             sha = _sha256_file(p)
             if entry and entry.get("sha256") == sha and entry.get("path") == str(p):
@@ -498,6 +692,7 @@ def update_files_source(cfg: Config, project: Project, source_id: str, *,
                                  file_id=_file_id(st), missing=0,
                                  last_checked=_now())
                 report.unchanged += 1
+                sync_file_acl(p, entry)
                 continue
             if dry_run:
                 if entry:
@@ -519,6 +714,7 @@ def update_files_source(cfg: Config, project: Project, source_id: str, *,
         path, changed = writer.write_source(
             title=p.stem, markdown=markdown, url=p.as_uri(),
             source_kind="document", import_id=source_id,
+            acl_source_clauses=file_acl(p),
             rel_path=entry.get("page") if entry else None,
             doc_id=doc_id, native_id=str(p),
             extra_fm={"original_path": str(p), "format": p.suffix.lower()})
@@ -561,46 +757,54 @@ def update_files_source(cfg: Config, project: Project, source_id: str, *,
             del tracked[key]
             report.removed += 1
 
+    if mapper is not None:
+        report.acl_unmapped = sorted(mapper.unmapped)[:100]
     if not dry_run:
         src["state"] = "ok"
         src["last_check"] = _now()
-        ingests.upsert(src)
+        ingests.save_after_update(src)
     return report
 
 
 def _bootstrap_legacy_documents(project: Project, ingests: IngestsLog) -> int:
     """Documenti ingeriti prima del registro: li aggancia alla sorgente
     'lista di file', così diventano aggiornabili senza reimportarli."""
-    tracked_pages = {e.get("page") for r in ingests.load()
-                     for e in r.get("files", {}).values()}
-    added = 0
-    src = None
-    for p in sorted((project.wiki_dir / "sources").glob("*.md")):
-        rel = f"sources/{p.name}"
-        if rel in tracked_pages:
-            continue
-        fm, _ = parse_frontmatter(p.read_text(encoding="utf-8"))
-        if fm.get("kind") != "document" or not fm.get("original_path"):
-            continue
-        src = src or ingests.files_source()
-        key = file_key(fm["original_path"])
-        if key in src["files"]:
-            continue
-        src["paths"].append(fm["original_path"])
-        src["files"][key] = {"path": fm["original_path"],
-                             "doc_id": fm.get("doc_id") or file_doc_id(key),
-                             "page": rel, "file_id": "", "size": None,
-                             "mtime_ns": None, "sha256": None, "missing": 0,
-                             "last_checked": None}
-        added += 1
-    if src is not None and added:
-        ingests.upsert(src)
+    with ingests._locked():                   # lettura e scrittura insieme
+        records = ingests.load()
+        tracked_pages = {e.get("page") for r in records
+                         for e in r.get("files", {}).values()}
+        src = next((r for r in records if r["id"] == DEFAULT_FILES_SOURCE), None)
+        added = 0
+        for p in sorted((project.wiki_dir / "sources").glob("*.md")):
+            rel = f"sources/{p.name}"
+            if rel in tracked_pages:
+                continue
+            fm, _ = parse_frontmatter(p.read_text(encoding="utf-8"))
+            if fm.get("kind") != "document" or not fm.get("original_path"):
+                continue
+            if src is None:
+                src = {"id": DEFAULT_FILES_SOURCE, "kind": "files", "paths": [],
+                       "created": _now(), "last_check": None, "state": "ok",
+                       "files": {}}
+            key = file_key(fm["original_path"])
+            if key in src["files"]:
+                continue
+            src["paths"].append(fm["original_path"])
+            src["files"][key] = {"path": fm["original_path"],
+                                 "doc_id": fm.get("doc_id") or file_doc_id(key),
+                                 "page": rel, "file_id": "", "size": None,
+                                 "mtime_ns": None, "sha256": None, "missing": 0,
+                                 "last_checked": None}
+            added += 1
+        if added:
+            ingests._upsert_unlocked(src)
     return added
 
 
 # -- punto d'ingresso ------------------------------------------------------------
 
-def register_paths(project: Project, paths: list[str], *, recursive: bool = True
+def register_paths(project: Project, paths: list[str], *, recursive: bool = True,
+                   permissions: bool = False
                    ) -> tuple[list[tuple[str, set[str] | None]], list[str]]:
     """Traduce percorsi (file o cartelle) in (sorgente, chiavi da
     controllare). Cartella = ramo registrato (riusato se esiste già).
@@ -613,7 +817,7 @@ def register_paths(project: Project, paths: list[str], *, recursive: bool = True
     for raw in paths:
         p = Path(raw)
         if p.is_dir():
-            targets[ingests.register_dir(p, recursive)["id"]] = None
+            targets[ingests.register_dir(p, recursive, permissions)["id"]] = None
             continue
         if p.is_file() and p.suffix.lower() not in SUPPORTED_EXT:
             errors.append(f"{raw}: formato non supportato")
@@ -624,9 +828,7 @@ def register_paths(project: Project, paths: list[str], *, recursive: bool = True
             if not p.is_file():
                 errors.append(f"{raw}: percorso inesistente")
                 continue
-            src = ingests.files_source()
-            src["paths"].append(str(p.resolve()))
-            ingests.upsert(src)
+            src = ingests.add_path(str(p.resolve()), permissions)
         if targets.get(src["id"], set()) is not None:
             targets.setdefault(src["id"], set()).add(key)
     return list(targets.items()), errors
@@ -638,7 +840,8 @@ def check_updates(cfg: Config, project: Project, *,
                   paths: list[str] | None = None,
                   discover: bool = True, dry_run: bool = False,
                   catalog: CatalogHook = None,
-                  progress: Progress = None) -> dict:
+                  progress: Progress = None,
+                  permissions: bool = False) -> dict:
     """Controlla e applica gli aggiornamenti. Senza selettori: TUTTE le
     sorgenti del progetto (ogni import + ogni sorgente file). Con
     imports/ingests/paths: solo quelle.
@@ -661,7 +864,7 @@ def check_updates(cfg: Config, project: Project, *,
 
     reports: list[SourceReport] = []
     if paths:
-        targets, path_errors = register_paths(project, paths)
+        targets, path_errors = register_paths(project, paths, permissions=permissions)
         file_targets += targets
         if path_errors:
             reports.append(SourceReport(kind="files", id="-", target="percorsi",
@@ -696,7 +899,7 @@ def check_updates(cfg: Config, project: Project, *,
     totals = Counter()
     for r in reports:
         for k in ("checked", "unchanged", "updated", "added", "renamed",
-                  "missing", "removed"):
+                  "missing", "removed", "acl_updated", "acl_unreadable"):
             totals[k] += getattr(r, k)
         totals["errors"] += len(r.errors)
     if not dry_run and any(r.changed() for r in reports):

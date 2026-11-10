@@ -122,7 +122,9 @@ class WikiWriter:
                      extra_fm: dict | None = None,
                      rel_path: str | None = None,
                      doc_id: str = "",
-                     native_id: str = "") -> tuple[Path, bool]:
+                     native_id: str = "",
+                     acl_source_clauses: list[list[str]] | None = None
+                     ) -> tuple[Path, bool]:
         """Scrive (o aggiorna) una source. Ritorna (path, changed), con
         changed = contenuto, ACL o titolo cambiati (serve reindicizzare).
 
@@ -153,12 +155,16 @@ class WikiWriter:
                      or getattr(self.project, "default_acl_classification", "internal"))
         roles = old_roles if acl_roles is None else sorted(set(acl_roles))
         classification = acl_classification or old_class
+        old_clauses = old_fm.get("acl_source_clauses") or []
+        clauses = (old_clauses if acl_source_clauses is None else
+                   sorted(sorted(set(c)) for c in acl_source_clauses))
         doc_id = doc_id or old_fm.get("doc_id", "")
         native_id = native_id or old_fm.get("native_id", "")
 
         content_changed = old_fm.get("content_sha256") != sha
         acl_changed = bool(old_fm) and (roles != old_roles
-                                        or classification != old_class)
+                                        or classification != old_class
+                                        or clauses != old_clauses)
         meta_changed = bool(old_fm) and (
             old_fm.get("title") != title or old_fm.get("url") != url
             or old_fm.get("doc_id") != doc_id
@@ -178,6 +184,7 @@ class WikiWriter:
             "updated": now_iso() if content_changed else old_fm.get("updated", now_iso()),
             "acl_roles": roles,
             "acl_classification": classification,
+            "acl_source_clauses": clauses,
             "doc_id": doc_id,
             "native_id": native_id,
             "content_version": version,
@@ -189,6 +196,25 @@ class WikiWriter:
         self.write_page("sources", path.stem, fm, markdown)
         title_changed = bool(old_fm) and old_fm.get("title") != title
         return path, content_changed or acl_changed or title_changed
+
+    def write_synthesis(self, *, title: str, body: str, sources: list[str]) -> Path:
+        """Sintesi (risposta salvata come articolo) che deriva da `sources`:
+        con le ACL attive la vede solo chi vede tutte quelle fonti. Le fonti
+        devono essere documenti (sources/ o meetings/) esistenti; una sintesi
+        non può derivare da un'altra sintesi."""
+        sources = sorted(set(sources))
+        if not sources:
+            raise ValueError("una sintesi deve dichiarare le fonti da cui deriva")
+        for s in sources:
+            if s.split("/", 1)[0] not in ("sources", "meetings"):
+                raise ValueError(f"fonte non ammessa (solo sources/ e meetings/): {s}")
+            self.read_page(s)                      # FileNotFoundError se non esiste
+        fm = {"title": title, "kind": "synthesis", "derived_from": sources,
+              "import_id": "syntheses",
+              "acl_classification": getattr(self.project, "default_acl_classification",
+                                            "internal"),
+              "updated": now_iso()}
+        return self.write_page("syntheses", page_slug(title), fm, body)
 
     def update_source_fm(self, rel_path: str, **fields) -> dict:
         """Cambia solo il frontmatter (es. le ACL): corpo, content_sha256 e
@@ -217,8 +243,11 @@ class WikiWriter:
                       source: str, participants: list[str],
                       summary: str, highlights: list[dict],
                       agreements: list[dict], tasks: list[dict],
-                      transcript_path: str = "") -> Path:
-        """Pagina riunione: Contenuto / Accordi / Attività."""
+                      transcript_path: str = "",
+                      acl_roles: list[str] | None = None) -> Path:
+        """Pagina riunione: Contenuto / Accordi / Attività. acl_roles: chi
+        può vederla con le ACL attive (chi l'ha salvata e i partecipanti
+        riconosciuti); l'admin la vede sempre."""
         slug = page_slug(f"{date[:10]}-{title}")
         lines = [f"# {title}", ""]
         lines += ["## Contenuto", "", summary.strip(), ""]
@@ -246,6 +275,10 @@ class WikiWriter:
             "source": source,             # meetbot | copilot | avatar
             "participants": participants,
             "updated": now_iso(),
+            "import_id": "meetings",
+            "acl_roles": sorted(set(acl_roles or [])),
+            "acl_classification": getattr(self.project, "default_acl_classification",
+                                          "internal"),
         }
         return self.write_page("meetings", slug, fm, "\n".join(lines))
 

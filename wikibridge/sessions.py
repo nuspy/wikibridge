@@ -74,6 +74,11 @@ class SessionStore:
                 del self._sessions[k]
         return len(keys)
 
+    def count(self) -> int:
+        with self._lock:
+            self._purge(self._clock())
+            return len(self._sessions)
+
     def _purge(self, now: float) -> None:
         expired = [k for k, s in self._sessions.items()
                    if now - s.last_seen > self.idle_s or now - s.created > self.max_s]

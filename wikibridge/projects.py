@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,6 +42,7 @@ class Project:
     created: str = ""
     acl_enforcement: bool = False
     default_acl_classification: str = "internal"
+    history_retention_days: int = 365
     root: Path = field(default=None, repr=False)  # type: ignore[assignment]
 
     @property
@@ -105,6 +107,14 @@ class ProjectStore:
                        encoding="utf-8")
         tmp.replace(self._registry_path)
 
+    @contextmanager
+    def _write_locked(self):
+        """Scritture sul registro: lock nel processo e tra processi (server,
+        CLI, agenti in WSL), così due modifiche non si cancellano a vicenda."""
+        from .filelock import file_lock
+        with self._lock, file_lock(Path(str(self._registry_path) + ".lock")):
+            yield
+
     def _project_root(self, slug: str) -> Path:
         return self._cfg.data_path() / "projects" / slug
 
@@ -116,6 +126,7 @@ class ProjectStore:
                        acl_enforcement=bool(rec.get("acl_enforcement",
                                                     self._cfg.acl_enforcement)),
                        default_acl_classification=self._cfg.default_acl_classification,
+                       history_retention_days=self._cfg.history_retention_days,
                        root=self._project_root(slug))
 
     # -- API ----------------------------------------------------------------
@@ -129,23 +140,25 @@ class ProjectStore:
         """Progetto per slug, o quello attivo. Crea 'default' se manca."""
         with self._lock:
             reg = self._load()
-            slug = slug or reg.get("active") or DEFAULT_SLUG
-            if slug not in reg["projects"]:
-                if slug != DEFAULT_SLUG:
-                    raise KeyError(f"progetto inesistente: {slug}")
-                reg["projects"][DEFAULT_SLUG] = {
+        slug = slug or reg.get("active") or DEFAULT_SLUG
+        if slug not in reg["projects"]:
+            if slug != DEFAULT_SLUG:
+                raise KeyError(f"progetto inesistente: {slug}")
+            with self._write_locked():            # solo per creare il default
+                reg = self._load()
+                reg["projects"].setdefault(DEFAULT_SLUG, {
                     "name": "Default",
                     "description": "Progetto predefinito",
                     "created": _now(),
-                }
+                })
                 self._save(reg)
-            proj = self._from_record(slug, reg["projects"][slug])
+        proj = self._from_record(slug, reg["projects"][slug])
         proj.ensure_layout()
         return proj
 
     def create(self, name: str, description: str = "") -> Project:
         slug = slugify(name)
-        with self._lock:
+        with self._write_locked():
             reg = self._load()
             if slug in reg["projects"]:
                 raise ValueError(f"progetto già esistente: {slug}")
@@ -161,7 +174,7 @@ class ProjectStore:
         return proj
 
     def activate(self, slug: str) -> Project:
-        with self._lock:
+        with self._write_locked():
             reg = self._load()
             if slug not in reg["projects"]:
                 raise KeyError(f"progetto inesistente: {slug}")
@@ -173,7 +186,7 @@ class ProjectStore:
         """Attiva/disattiva il filtro ACL sulla ricerca per un progetto."""
         if slug == DEFAULT_SLUG:
             self.get(DEFAULT_SLUG)        # il default nasce al primo accesso
-        with self._lock:
+        with self._write_locked():
             reg = self._load()
             if slug not in reg["projects"]:
                 raise KeyError(f"progetto inesistente: {slug}")
@@ -194,7 +207,7 @@ class ProjectStore:
         """Rimuove dal registry; i file su disco restano (cancellazione manuale)."""
         if slug == DEFAULT_SLUG:
             raise ValueError("il progetto default non si elimina")
-        with self._lock:
+        with self._write_locked():
             reg = self._load()
             if slug not in reg["projects"]:
                 raise KeyError(f"progetto inesistente: {slug}")

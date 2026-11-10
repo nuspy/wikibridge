@@ -22,6 +22,7 @@ from ..convert.html_md import html_to_markdown
 log = logging.getLogger("wikibridge.mediawiki")
 
 _WIKI_PATH_RE = re.compile(r"/(?:wiki|index\.php)(?:/|\?title=)([^?&#]+)")
+RC_MAX_DAYS = 30
 
 
 class MediaWikiAdapter(SourceAdapter):
@@ -189,6 +190,34 @@ class MediaWikiAdapter(SourceAdapter):
                  if l.get("ns") == 0 and "exists" in l]
         return PageContent(ref=ref, markdown=md, links=links,
                            revision=str(parse.get("revid", "")))
+
+    def changed_ids_since(self, url: str, scope: str, since: str) -> set[str] | None:
+        """Titoli modificati, creati, spostati o cancellati dopo `since`, da
+        RecentChanges (in UTC; margine di 5 minuti). La wiki conserva le
+        modifiche recenti per un periodo limitato (di default 90 giorni):
+        oltre RC_MAX_DAYS dall'ultimo controllo si torna al controllo per
+        pagina."""
+        from datetime import datetime, timedelta, timezone
+        try:
+            t = datetime.fromisoformat(since)
+            if datetime.now(timezone.utc) - t > timedelta(days=RC_MAX_DAYS):
+                return None
+            end = (t - timedelta(minutes=5)).astimezone(timezone.utc)
+            self._ensure_api(url)
+            titles: set[str] = set()
+            cont: dict = {}
+            while True:
+                data = self._call(action="query", list="recentchanges",
+                                  rcend=end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                  rcnamespace=0, rcprop="title", rclimit=500,
+                                  rctype="edit|new|log", **cont)
+                titles |= {rc["title"] for rc in data["query"]["recentchanges"]}
+                cont = data.get("continue") or {}
+                if not cont:
+                    return titles
+        except Exception as e:  # noqa: BLE001 — feed facoltativo: si ripiega
+            log.info("RecentChanges non disponibile (%s): ripiego", e)
+            return None
 
     def changed_since(self, ref: PageRef, revision: str | None) -> bool:
         if not revision:

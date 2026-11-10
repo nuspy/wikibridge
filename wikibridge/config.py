@@ -57,10 +57,16 @@ class Config:
 
     user_agent: str = "wikibridge/0.1 (+https://github.com/nuspy)"
 
+    # Registro di audit (audit.py): chi ha visto e fatto cosa.
+    audit_enabled: bool = True
+    audit_dir: str = ""                   # vuoto = <data_dir>/audit
+    audit_query_mode: str = "hash"        # hash | full | none (testo delle query)
+    audit_retention_months: int = 12
+
     # Identità di chi interroga l'API (diverso da AuthProfileStore, che
     # sono le credenziali dell'importer verso le sorgenti esterne).
     # "none" = nessuna integrazione enterprise, comportamento invariato.
-    identity_provider: str = "none"       # none | ldap
+    identity_provider: str = "none"       # none | ldap | oidc | saml
     identity_role_map: dict = field(default_factory=dict)  # gruppo nativo -> ruolo ACL
 
     # LDAP / Active Directory
@@ -69,10 +75,59 @@ class Config:
     ldap_bind_password: str = ""          # valore letterale o "env:VAR"
     ldap_base_dn: str = ""
     ldap_user_filter: str = "(sAMAccountName={username})"
+    ldap_mail_filter: str = "(mail={username})"   # quando l'utente è un'email
     ldap_group_attr: str = "memberOf"
     ldap_start_tls: bool = False          # StartTLS su ldap://
     ldap_ca_file: str = ""                # CA per verificare il certificato del DC
     ldap_allow_insecure: bool = False     # ldap:// in chiaro: SOLO per test
+    # Gruppi annidati: "memberof" = risale memberOf dei gruppi (AD e
+    # OpenLDAP, una lettura per gruppo, in cache); "in_chain" = regola
+    # LDAP_MATCHING_RULE_IN_CHAIN di AD (una query, lenta su AD grandi);
+    # "off" = solo appartenenza diretta.
+    ldap_nested_groups: str = "memberof"
+    ldap_nested_depth: int = 5
+    # Rilevamento delle modifiche (revoche/concessioni senza aspettare il
+    # TTL): attributo che cresce a ogni modifica e oggetti da osservare —
+    # i gruppi (appartenenze) e gli utenti (account disabilitati/rimossi).
+    # AD: uSNChanged (è per-DC: puntare sempre lo stesso DC); OpenLDAP:
+    # modifyTimestamp con "(|(objectClass=groupOfNames)(objectClass=person))".
+    ldap_change_attr: str = "uSNChanged"
+    ldap_watch_filter: str = "(|(objectClass=group)(objectClass=user))"
+    # Ogni quanti secondi il server controlla da solo le modifiche; 0 = mai
+    # (solo su richiesta: POST /identity/sync-groups, es. da un cron).
+    ldap_change_poll_s: int = 0
+
+    # OIDC (Entra ID/Azure AD, Okta, Keycloak, Google...): identity_provider="oidc"
+    oidc_issuer: str = ""                 # es. https://login.microsoftonline.com/<tenant>/v2.0
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""          # vuoto = client pubblico (PKCE); o "env:VAR"
+    oidc_scopes: str = "openid profile email offline_access"
+    oidc_redirect_uri: str = ""           # vuoto = http://127.0.0.1:<api_port>/identity/oidc/callback
+    oidc_groups_claim: str = "groups"     # Entra ID: "groups" (id) o "roles" (app roles)
+    oidc_user_id_claim: str = "sub"       # Entra ID: meglio "oid" (stabile tra app)
+    oidc_username_claim: str = "preferred_username"
+    oidc_return_urls: list = field(default_factory=list)  # oltre al loopback
+    oidc_allow_insecure: bool = False     # issuer http://: SOLO per test
+
+    # SAML 2.0 (AD FS, Entra ID, Okta, Shibboleth...): identity_provider="saml".
+    # Richiede l'extra "saml" (python3-saml + xmlsec). IdP da metadati (URL
+    # https o file) oppure dai tre campi espliciti.
+    saml_idp_metadata: str = ""
+    saml_idp_entity_id: str = ""
+    saml_idp_sso_url: str = ""
+    saml_idp_cert: str = ""               # PEM, percorso di un file PEM, o "env:VAR"
+    saml_sp_entity_id: str = ""           # vuoto = <acs senza /acs>/metadata
+    saml_acs_url: str = ""                # vuoto = http://127.0.0.1:<api_port>/identity/saml/acs
+    # Da dove vengono i ruoli: "ldap" = SAML solo per il login, gruppi letti
+    # dal directory (config ldap_*: revoche in tempo reale); "assertion" =
+    # gruppi dell'asserzione, fissi fino alla scadenza della sessione.
+    saml_roles_source: str = "assertion"
+    saml_groups_attr: str = "http://schemas.microsoft.com/ws/2008/06/identity/claims/groups"
+    saml_username_attr: str = ""          # vuoto = NameID
+    saml_user_id_attr: str = ""           # vuoto = NameID (Entra: .../claims/objectidentifier)
+    saml_display_name_attr: str = "http://schemas.microsoft.com/identity/claims/displayname"
+    saml_return_urls: list = field(default_factory=list)  # oltre al loopback
+    saml_allow_insecure: bool = False     # metadati via http://: SOLO per test
 
     # Sessioni utente (modalità con identity provider): il login LDAP avviene
     # una volta, poi le richieste usano un token di sessione revocabile.
@@ -92,7 +147,17 @@ class Config:
     # Cache dei ruoli risolti dal provider (evita un round-trip LDAP per
     # ogni ricerca) e filtro ACL sui blocchi di conoscenza.
     entitlement_cache_ttl_s: int = 300
+    # Permessi letti alla fonte (import con --permissions): gruppo della
+    # fonte -> ruolo ACL; con passthrough il nome del gruppo è il ruolo.
+    # source_user_map: accountId/username/email della fonte -> principal
+    # (es. "user:<guid>") quando il directory non basta a riconoscerlo.
+    source_group_map: dict = field(default_factory=dict)
+    source_group_passthrough: bool = False
+    source_user_map: dict = field(default_factory=dict)
     default_acl_classification: str = "internal"
+    # Storico delle versioni dei chunk: dopo quanti giorni si eliminano le
+    # versioni superate (0 = mai). La versione corrente non scade mai.
+    history_retention_days: int = 365
     # livello massimo visibile a un utente autenticato senza un ruolo
     # "clearance:<livello>" (public < internal < confidential < restricted)
     default_clearance: str = "internal"

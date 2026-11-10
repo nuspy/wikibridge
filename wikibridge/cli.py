@@ -80,6 +80,9 @@ def main(argv: list[str] | None = None) -> int:
     p_imp.add_argument("--exclude", action="append", default=[])
     p_imp.add_argument("--no-catalog", action="store_true",
                        help="salta la catalogazione LLM")
+    p_imp.add_argument("--permissions", action="store_true",
+                       help="legge anche i permessi di lettura alla fonte "
+                            "(Confluence) e li applica ai blocchi")
 
     p_sync = sub.add_parser("sync", help="sync incrementale di un import")
     p_sync.add_argument("import_id")
@@ -101,6 +104,8 @@ def main(argv: list[str] | None = None) -> int:
     p_upd.add_argument("--dry-run", action="store_true",
                        help="mostra cosa cambierebbe senza scrivere")
     p_upd.add_argument("--no-catalog", action="store_true")
+    p_upd.add_argument("--permissions", action="store_true",
+                       help="i --path nuovi leggono anche i permessi NTFS")
 
     sub.add_parser("sources", help="elenca le sorgenti aggiornabili del progetto")
 
@@ -124,6 +129,8 @@ def main(argv: list[str] | None = None) -> int:
     _principal_args(a_page)
     a_page.add_argument("--classification",
                         choices=["public", "internal", "confidential", "restricted"])
+    a_page.add_argument("--yes", action="store_true",
+                        help="conferma una modifica che allarga l'accesso")
     a_coll = acl_sub.add_parser("collection", help="crea/modifica una collezione di sorgenti")
     a_coll.add_argument("id")
     _principal_args(a_coll)
@@ -132,10 +139,36 @@ def main(argv: list[str] | None = None) -> int:
     a_coll.add_argument("--source", action="append", default=[],
                         help="id di import o sorgente file (ripetibile)")
     a_coll.add_argument("--delete", action="store_true")
+    a_coll.add_argument("--yes", action="store_true",
+                        help="conferma una modifica che allarga l'accesso")
     a_gate = acl_sub.add_parser("gate", help="chi può vedere il progetto (vuoto = tutti)")
     _principal_args(a_gate)
+    a_gate.add_argument("--yes", action="store_true",
+                        help="conferma una modifica che allarga l'accesso")
+
+    p_his = sub.add_parser("history", help="storico delle versioni di un documento")
+    p_his.add_argument("path", help="es. sources/x.md")
+    p_his.add_argument("--at", default="",
+                       help="data ISO: mostra il documento com'era in quel momento")
+
+    p_syn = sub.add_parser("synthesis", help="salva una sintesi con le fonti da cui deriva")
+    p_syn.add_argument("--title", required=True)
+    p_syn.add_argument("--source", action="append", required=True,
+                       help="documento da cui deriva, es. sources/x.md (ripetibile)")
+    p_syn.add_argument("--file", required=True, help="file markdown con il testo")
+
+    p_aud = sub.add_parser("audit", help="registro di audit (chi ha visto e fatto cosa)")
+    p_aud.add_argument("--since", default="", help="data ISO, es. 2026-09-01")
+    p_aud.add_argument("--user", default="")
+    p_aud.add_argument("--action", default="")
+    p_aud.add_argument("--path", default="", help="chi ha visto questo documento")
+    p_aud.add_argument("--limit", type=int, default=200)
+    p_aud.add_argument("--verify", action="store_true",
+                       help="verifica l'integrità della catena di hash")
     a_enf = acl_sub.add_parser("enforce", help="attiva/disattiva il filtro ACL")
     a_enf.add_argument("state", choices=["on", "off"])
+    a_enf.add_argument("--yes", action="store_true",
+                       help="conferma lo spegnimento (rende tutto visibile a tutti)")
 
     p_ref = sub.add_parser("refresh", help="refresh puntuale di una pagina")
     p_ref.add_argument("wiki_path", help="es. sources/mia-pagina.md")
@@ -144,6 +177,8 @@ def main(argv: list[str] | None = None) -> int:
     p_ing.add_argument("path")
     p_ing.add_argument("--recursive", action="store_true")
     p_ing.add_argument("--no-catalog", action="store_true")
+    p_ing.add_argument("--permissions", action="store_true",
+                       help="legge anche i permessi NTFS dei file (Windows)")
 
     p_auth = sub.add_parser("auth", help="profili di autenticazione")
     auth_sub = p_auth.add_subparsers(dest="auth_cmd", required=True)
@@ -252,7 +287,8 @@ def main(argv: list[str] | None = None) -> int:
         reports = [check_updates(cfg, p, imports=args.imports,
                                  ingests=args.ingests, paths=args.paths,
                                  discover=not args.no_discover,
-                                 dry_run=args.dry_run, catalog=catalog)
+                                 dry_run=args.dry_run, catalog=catalog,
+                                 permissions=args.permissions)
                    for p in projects]
         _print(reports if args.all_projects else reports[0])
         # exit code utile a cron/agenti: 1 se qualche sorgente ha errori
@@ -262,6 +298,42 @@ def main(argv: list[str] | None = None) -> int:
         from .updater import list_sources
         proj = store.get(args.project)
         _print({"project": proj.slug, "sources": list_sources(proj)})
+        return 0
+
+    if args.cmd == "history":
+        from .wiki.search import SearchIndex
+        index = SearchIndex(store.get(args.project))
+        _print(index.document_at(args.path, args.at) if args.at
+               else index.history(args.path))
+        return 0
+
+    if args.cmd == "synthesis":
+        from pathlib import Path as _P
+        from .wiki.search import SearchIndex
+        from .wiki.writer import WikiWriter
+        proj = store.get(args.project)
+        writer = WikiWriter(proj)
+        try:
+            path = writer.write_synthesis(
+                title=args.title, sources=args.source,
+                body=_P(args.file).read_text(encoding="utf-8"))
+        except (ValueError, OSError) as e:
+            _print({"error": str(e)})
+            return 2
+        rel = f"syntheses/{path.name}"
+        SearchIndex(proj).upsert_page(rel, "syntheses", *writer.read_page(rel))
+        _print({"path": rel, "derived_from": sorted(set(args.source))})
+        return 0
+
+    if args.cmd == "audit":
+        from .audit import AuditLog
+        log_ = AuditLog(cfg)
+        if args.verify:
+            result = log_.verify()
+            _print(result)
+            return 0 if result["ok"] else 1
+        _print(log_.search(since=args.since, user=args.user, action=args.action,
+                           path=args.path, limit=args.limit))
         return 0
 
     if args.cmd in ("catalog-rebuild", "acl"):
@@ -311,21 +383,59 @@ def _acl_cli(cfg, store: ProjectStore, args) -> int:
     if args.acl_cmd == "show":
         _print(acl_admin.show(proj, args.path))
         return 0
+    from .audit import AuditLog
+    audit = AuditLog(cfg)
+
+    def confirmed(preview: dict) -> bool:
+        if preview["widening"] and not getattr(args, "yes", False):
+            _print({"error": "la modifica allarga l'accesso: ripeti con --yes",
+                    "preview": preview})
+            return False
+        return True
+
     if args.acl_cmd == "enforce":
-        _print(store.set_acl_enforcement(proj.slug, args.state == "on").to_dict())
+        preview = acl_admin.preview_enforcement(proj, args.state == "on")
+        if not confirmed(preview):
+            return 2
+        result = store.set_acl_enforcement(proj.slug, args.state == "on").to_dict()
+        audit.write("acl_enforcement", user="local-cli", project=proj.slug,
+                    preview=preview)
+        _print(result)
         return 0
     provider = (build_identity_provider(cfg)
                 if args.user and cfg.identity_provider != "none" else None)
-    principals = acl_admin.principals_from(args.role, args.user, provider)
+    labels: dict[str, str] = {}
+    principals = acl_admin.principals_from(args.role, args.user, provider, labels)
+
     if args.acl_cmd == "page":
-        _print(acl_admin.set_page_acl(proj, args.path, principals, args.classification))
+        preview = acl_admin.preview_page(proj, args.path, principals, args.classification)
+        if not confirmed(preview):
+            return 2
+        result = acl_admin.set_page_acl(proj, args.path, principals, args.classification,
+                                        labels=labels)
+        audit.write("acl_page", user="local-cli", project=proj.slug, preview=preview,
+                    **result)
+        _print(result)
     elif args.acl_cmd == "collection":
-        _print(acl_admin.delete_collection(proj, args.id) if args.delete else
-               acl_admin.set_collection(proj, args.id, principals=principals,
-                                        classification=args.classification,
-                                        sources=args.source))
+        spec = (dict(principals=[], classification="internal", sources=[]) if args.delete
+                else dict(principals=principals, classification=args.classification,
+                          sources=args.source))
+        preview = acl_admin.preview_collection(proj, args.id, **spec)
+        if not confirmed(preview):
+            return 2
+        result = (acl_admin.delete_collection(proj, args.id) if args.delete
+                  else acl_admin.set_collection(proj, args.id, **spec, labels=labels))
+        audit.write("acl_collection_delete" if args.delete else "acl_collection",
+                    user="local-cli", project=proj.slug, collection=args.id,
+                    preview=preview)
+        _print({**result, "preview": preview})
     elif args.acl_cmd == "gate":
-        _print(acl_admin.set_gate(proj, principals))
+        preview = acl_admin.preview_gate(proj, principals)
+        if not confirmed(preview):
+            return 2
+        result = acl_admin.set_gate(proj, principals, labels=labels)
+        audit.write("acl_gate", user="local-cli", project=proj.slug, preview=preview)
+        _print(result)
     return 0
 
 

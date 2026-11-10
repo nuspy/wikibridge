@@ -53,6 +53,9 @@ def test_group_change_visible_after_cache_invalidation(cfg):
 
 def test_normalize_dn():
     assert normalize_dn("CN=Legal, OU=Groups,DC=Example") == "cn=legal,ou=groups,dc=example"
+    # spazi attorno ai separatori via, spazi dentro i valori conservati
+    assert normalize_dn("cn=Mario Rossi , ou = Users") == \
+        normalize_dn("CN=Mario Rossi,OU=Users") == "cn=mario rossi,ou=users"
 
 
 def test_session_idle_and_absolute_expiry():

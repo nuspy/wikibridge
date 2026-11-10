@@ -27,6 +27,12 @@ I dati vivono in `/mnt/c/Projects/wikibridge/data/projects/<slug>/`:
 syntheses/, meetings/), `graph/`, `index.db` (ricerca FTS), `_pending/`
 (task di catalogazione che TU devi drenare, vedi sotto).
 
+**Multi-utente (ACL attive)**: se `GET http://127.0.0.1:8775/health`
+riporta `"multi_user": true`, NON leggere `data/` dal disco per rispondere
+a un utente: scavalcheresti i suoi permessi. Usa solo la conoscenza che ti
+arriva nel prompt (estratti già filtrati) o l'API `/rag/context` con la
+sessione di quell'utente; i comandi qui sotto restano per l'amministrazione.
+
 ## Comandi
 
 | Intento utente | Comando |
@@ -40,6 +46,7 @@ syntheses/, meetings/), `graph/`, `index.db` (ricerca FTS), `_pending/`
 | aggiorna la conoscenza (tutte le sorgenti: rami wiki, cartelle, file) | `wikibridgectl.py update [--project slug]` — controlla, riscrive solo ciò che è cambiato, niente duplicati |
 | aggiorna solo alcune sorgenti | `wikibridgectl.py update --import <id> \| --ingest <id> \| --path <file\|dir>` (ripetibili; `--dry-run` per vedere cosa cambierebbe) |
 | elenca le sorgenti aggiornabili | `wikibridgectl.py sources [--project slug]` |
+| salva una risposta/sintesi come articolo | `wikibridgectl.py synthesis --title "<titolo>" --source sources/a.md --source sources/b.md --file <testo.md> [--project slug]` — dichiara SEMPRE tutte le pagine da cui hai tratto il contenuto: con le ACL attive la sintesi la vede solo chi vede tutte quelle fonti. Non scrivere file in `syntheses/` a mano |
 | refresh di una pagina | `wikibridgectl.py refresh <wiki-path>` |
 | /wiki-install-llmwiki — installa la skill llm-wiki | `wikibridgectl.py ensure-llmwiki` |
 | profili auth | `wikibridgectl.py auth add <nome> --type bearer\|basic\|header\|cookie\|oauth2` |

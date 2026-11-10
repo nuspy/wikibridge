@@ -21,6 +21,7 @@ import threading
 import time
 from collections import deque
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Callable
 from urllib.parse import urlparse
 
@@ -87,7 +88,8 @@ class ImportsLog:
         return []
 
     def upsert(self, record: dict) -> None:
-        with self._lock:
+        from .filelock import file_lock
+        with self._lock, file_lock(Path(str(self._path) + ".lock")):
             records = self.load()
             for i, r in enumerate(records):
                 if r["id"] == record["id"]:
@@ -118,8 +120,11 @@ def run_import(cfg: Config, project: Project, url: str, *,
                catalog: CatalogHook = None,
                progress: Callable[[dict], None] | None = None,
                cancel: threading.Event | None = None,
-               resume_record: dict | None = None) -> dict:
-    """Esegue un import (bloccante). Ritorna il record finale del job."""
+               resume_record: dict | None = None,
+               permissions: bool = False) -> dict:
+    """Esegue un import (bloccante). Ritorna il record finale del job.
+    permissions: legge anche i permessi di lettura alla fonte (se l'adapter
+    li espone) e li applica ai blocchi (vedi source_acl.py)."""
     limits = limits or ImportLimits.from_config(cfg)
     depth = min(depth, limits.max_depth)
     cancel = cancel or threading.Event()
@@ -148,6 +153,14 @@ def run_import(cfg: Config, project: Project, url: str, *,
     }
     rec["state"] = "running"
     rec["auth_profile"] = auth_profile
+    rec["permissions"] = bool(rec.get("permissions") or permissions)
+    # punto di partenza del change feed per il primo aggiornamento
+    rec.setdefault("last_sync", _now())
+    mapper = None
+    if rec["permissions"]:
+        from .source_acl import make_mapper
+        mapper = make_mapper(cfg)
+        rec["acl_unreadable"] = 0
     imports_log.upsert(rec)
 
     def emit(phase: str, detail: str = "") -> None:
@@ -249,12 +262,17 @@ def run_import(cfg: Config, project: Project, url: str, *,
                 break
 
             doc_id = wiki_doc_id(adapter.name, page.ref.url, page.ref.id)
+            clauses = None
+            if mapper is not None:
+                from .source_acl import read_page_acl
+                clauses, readable = read_page_acl(adapter, page.ref, mapper)
+                rec["acl_unreadable"] += 0 if readable else 1
             path, changed = writer.write_source(
                 title=page.ref.title or page.ref.url,
                 markdown=page.markdown, url=page.ref.url,
                 source_kind="web", import_id=rec["id"],
                 revision=page.revision, doc_id=doc_id,
-                native_id=page.ref.id,
+                native_id=page.ref.id, acl_source_clauses=clauses,
                 extra_fm={"adapter": adapter.name})
             rel = f"sources/{path.name}"
             rec["page_index"][page.ref.url] = {
@@ -299,6 +317,8 @@ def run_import(cfg: Config, project: Project, url: str, *,
         rec["errors"].append(str(e))
     finally:
         rec["finished"] = _now()
+        if mapper is not None:
+            rec["acl_unmapped"] = sorted(mapper.unmapped)[:100]
         imports_log.upsert(rec)
         writer.append_log(
             f"import {rec['id']} {rec['state']}: {rec['pages']} pagine da "
@@ -387,7 +407,8 @@ def start_import_cli(cfg: Config, store: ProjectStore, args) -> int:
                      scope=args.scope, limits=limits,
                      auth_profile=args.auth_profile,
                      adapter_name=args.adapter, catalog=catalog,
-                     progress=_cli_progress)
+                     progress=_cli_progress,
+                     permissions=getattr(args, "permissions", False))
     print()
     print(json.dumps({k: rec[k] for k in
                       ("id", "state", "pages", "skipped", "truncated", "errors")},

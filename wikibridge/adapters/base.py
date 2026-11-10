@@ -36,6 +36,11 @@ class PageGoneError(Exception):
     """La pagina non esiste più alla sorgente (cancellata o rinominata)."""
 
 
+class AclUnreadable(Exception):
+    """I permessi della pagina non si possono leggere (l'account di import
+    non ha il diritto, API assente...): la pagina va negata, non aperta."""
+
+
 class SourceAdapter(ABC):
     name: str = "base"
     # scope per cui resolve() restituisce l'elenco COMPLETO del ramo (serve
@@ -62,3 +67,24 @@ class SourceAdapter(ABC):
     def changed_since(self, ref: PageRef, revision: str | None) -> bool:
         """False solo se si può provare che la pagina NON è cambiata."""
         return True
+
+    def changed_ids_since(self, url: str, scope: str, since: str) -> set[str] | None:
+        """Change feed: id nativi delle pagine del ramo modificate dopo
+        `since` (ISO UTC), con UNA ricerca invece di un controllo per pagina.
+        Può includere pagine non cambiate (margini di sicurezza), non deve
+        ometterne. None = non disponibile: si controlla pagina per pagina."""
+        return None
+
+    def still_in_branch(self, ref: PageRef, url: str, scope: str) -> bool | None:
+        """Una pagina che manca dall'elenco del ramo esiste ancora nel ramo?
+        (Gli elenchi da indici di ricerca possono essere in ritardo.) None =
+        non verificabile: vale l'elenco."""
+        return None
+
+    def fetch_acl(self, ref: PageRef) -> list[dict] | None:
+        """Restrizioni di lettura della pagina alla fonte, come clausole in
+        AND: [{"groups": [...], "users": [{"username"|"email"|"accountId"}]}].
+        [] = nessuna restrizione propria o ereditata; None = la fonte non
+        espone permessi (si usano solo quelli assegnati in wikibridge).
+        Solleva AclUnreadable se i permessi esistono ma non si leggono."""
+        return None

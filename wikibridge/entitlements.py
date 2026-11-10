@@ -57,3 +57,15 @@ class EntitlementCache:
         roles_for() ri-risolve subito dal provider."""
         with self._lock:
             self._cache.pop(subject, None)
+
+    def clear(self) -> int:
+        """Invalida tutti (modifica rilevata nel directory, o invalidazione
+        admin globale). Costo: una risoluzione per utente alla sua prossima
+        richiesta."""
+        with self._lock:
+            n = len(self._cache)
+            self._cache.clear()
+        return n
+
+    def __len__(self) -> int:
+        return len(self._cache)

@@ -212,7 +212,7 @@ hr.sep { border: 0; border-top: .5pt solid var(--rule); margin: 1.2em 0; }
 <div class="note"><b>Note</b> — WikiBridge's source code carries Italian docstrings and produces some Italian user-facing strings (page sections such as <i>Fonti</i>/<i>Entità</i>, log lines, error messages). This manual is in English; where a literal string matters, the Italian original is quoted verbatim.</div>
 
 <h3>Version covered</h3>
-<p>This edition documents WikiBridge <strong>0.1.0</strong> including the interactive OAuth&nbsp;2.0 / SSO authentication subsystem (modules <code>wikibridge.oauth</code>, extended <code>wikibridge.auth</code>, login-wall guard in <code>wikibridge.http</code>). Known issues in this release are catalogued in Part&nbsp;VIII.</p>
+<p>This edition documents WikiBridge <strong>0.1.0</strong> including the interactive OAuth&nbsp;2.0 / SSO authentication subsystem (modules <code>wikibridge.oauth</code>, extended <code>wikibridge.auth</code>, login-wall guard in <code>wikibridge.http</code>). Known issues in this release are catalogued in Part&nbsp;VIII. Multi-user access control — corporate identity (LDAP/AD, OIDC, SAML), ACL filtering of every read, permissions read from Confluence and NTFS, on-demand updates without duplicates, chunk versions and the audit log — is described in Part&nbsp;IX; Parts&nbsp;VI–VII do not yet document its modules symbol by symbol.</p>
 </div>
 
 <!-- ================================================================ -->
@@ -268,6 +268,20 @@ hr.sep { border: 0; border-top: .5pt solid var(--rule); margin: 1.2em 0; }
   </li>
   <li><a href="#part7">Part VII — Data &amp; File Formats</a></li>
   <li><a href="#part8">Part VIII — Troubleshooting, Known Issues &amp; Limits</a></li>
+  <li><a href="#part9">Part IX — Multi-User Access Control (Enterprise)</a>
+    <ol>
+      <li><a href="#p9-model">How filtering works</a></li>
+      <li><a href="#p9-idp">Choosing an identity provider</a></li>
+      <li><a href="#p9-session">Sessions, application key, real-time changes</a></li>
+      <li><a href="#p9-label">Labelling knowledge</a></li>
+      <li><a href="#p9-source">Permissions read from the source</a></li>
+      <li><a href="#p9-update">Updates, chunks and version history</a></li>
+      <li><a href="#p9-derived">Syntheses, meetings and RAG context</a></li>
+      <li><a href="#p9-audit">Audit log</a></li>
+      <li><a href="#p9-api">HTTP endpoints for multi-user mode</a></li>
+      <li><a href="#p9-callapicall">callAPIcall integration</a></li>
+    </ol>
+  </li>
   <li><a href="#appa">Appendix A — Documentation coverage audit</a></li>
   <li><a href="#appb">Appendix B — Glossary</a></li>
 </ol>
@@ -525,6 +539,8 @@ wikibridge ingest "D:\specs" --recursive --no-catalog</pre>
 <li>Supported via <code>markitdown</code>: <code>.pdf .docx .pptx .xlsx .xls .html .htm .csv .json .xml .epub .msg</code>; passed through as-is: <code>.md .markdown .txt .rst</code>. Anything else in a directory scan is silently ignored; a single unsupported file raises an error.</li>
 <li>Per-file cap 50&nbsp;MB; oversized, unconvertible or empty-conversion files are skipped and listed in <code>errors</code> (exit code 1 if any).</li>
 <li>Each document becomes a source with <code>kind: document</code>, <code>url: file:///…</code>, <code>original_path</code> and <code>format</code> in frontmatter; content SHA-256 dedup applies, so re-ingesting an unchanged folder is a no-op.</li>
+<li>The file or folder is registered as an updatable source (<code>ingests.json</code>): <code>wikibridge update</code> later re-checks it, rewrites changed documents in place, follows renames and removes files that disappeared (§9.6).</li>
+<li><code>--permissions</code> (Windows) also reads each file's NTFS permissions and applies them as access rules in multi-user mode (§9.5).</li>
 </ul>
 
 <h2 id="p2-search">2.5&ensp;Searching, indexing, browsing</h2>
@@ -564,6 +580,7 @@ wikibridge refresh sources/payment-api.md   # re-fetch a single page</pre>
 <li><b>sync</b> asks the adapter <code>changed_since(revision)</code> for each page of the job and re-downloads only pages whose revision moved (MediaWiki <code>revid</code>, Confluence <code>version</code>, Notion <code>last_edited_time</code>, HTTP <code>ETag/Last-Modified</code>). Unchanged bodies (same SHA-256) are not rewritten.</li>
 <li><b>refresh</b> re-fetches one page using the origin URL and adapter recorded in its frontmatter, re-using the original import's auth profile (or the host-matched one).</li>
 <li>Both honour the same auth machinery as imports, including silent token renewal and the <code>auth_required</code> stop (CLI exit code 2 with a JSON error).</li>
+<li><b>update</b> is the general form: <code>wikibridge update</code> checks every wiki branch, folder and file of the project (or only those selected with <code>--import</code>, <code>--ingest</code>, <code>--path</code>), finds new and removed pages, and never duplicates a page. <code>sync &lt;id&gt;</code> is equivalent to <code>update --import &lt;id&gt;</code>. See §9.6.</li>
 </ul>
 
 <h2 id="p2-server">2.8&ensp;Running the HTTP server / GUI backend</h2>
@@ -726,7 +743,7 @@ $env:WIKIBRIDGE_RATE_LIMIT_RPS = "0.5"</pre>
 
 <h2>5.1&ensp;Service</h2>
 <div class="ep"><div class="sig"><span class="tag get">GET</span> /health</div>
-<p>Liveness + context: <code>{ok: true, active_project, job}</code>.</p></div>
+<p>Liveness + context: <code>{ok: true, multi_user, login, active_project, job}</code>. In multi-user mode non-admin callers get only <code>{ok, multi_user, login, sso_login?}</code> (§9.9).</p></div>
 
 <h2>5.2&ensp;Projects</h2>
 <div class="ep"><div class="sig"><span class="tag get">GET</span> /projects</div><p>Array of projects; the active one has <code>"active": true</code>.</p></div>
@@ -745,7 +762,7 @@ $env:WIKIBRIDGE_RATE_LIMIT_RPS = "0.5"</pre>
 <h2>5.4&ensp;Document ingest</h2>
 <div class="ep"><div class="sig"><span class="tag post">POST</span> /ingest&emsp;<span class="small">multipart/form-data: file, project?</span></div>
 <p>Uploads one document to a temp dir and ingests it in the background slot. <code>400</code> without a file; <code>202</code>/<code>409</code> otherwise.</p></div>
-<div class="ep"><div class="sig"><span class="tag post">POST</span> /ingest/dir&emsp;<span class="small">{path, recursive?=true, project?}</span></div>
+<div class="ep"><div class="sig"><span class="tag post">POST</span> /ingest/dir&emsp;<span class="small">{path, recursive?=true, permissions?=false, project?}</span></div>
 <p>Ingests a directory <em>on the server's filesystem</em>. <code>400</code> if the path does not exist.</p></div>
 
 <h2>5.5&ensp;Meetings</h2>
@@ -1249,6 +1266,127 @@ format: .pdf
 <li>JavaScript-rendered pages unsupported (no headless browser).</li>
 <li><code>project delete</code> never deletes files; auth secrets are write-only over HTTP; page reads are confined to the wiki tree (path-traversal guard).</li>
 <li>The Flask development server targets loopback GUIs — front it with a real WSGI server + TLS if it must leave the machine.</li>
+</ul>
+</div>
+
+<!-- ================================================================ -->
+<!-- PART IX                                                           -->
+<!-- ================================================================ -->
+<h1 id="part9">Part IX — Multi-User Access Control (Enterprise)</h1>
+<div class="twocol">
+<p>By default WikiBridge is a <strong>single-user</strong> tool: whoever reaches the API sees every page of a project. Setting <code>identity_provider</code> to <code>ldap</code>, <code>oidc</code> or <code>saml</code> turns it into a <strong>multi-user</strong> knowledge base in which every search, page, tree, graph and RAG context is filtered by the permissions of the person asking — the same corporate permissions they have in Active Directory, the identity provider, or the source system itself. This part explains the model and the procedures; the open problems and the production checklist live in <code>documentation.md</code> (Italian) at the repository root.</p>
+
+<h2 id="p9-model">9.1&ensp;How filtering works</h2>
+<ul>
+<li><b>Principals.</b> A signed-in user carries a set of <em>principals</em>: application roles mapped from directory groups (<code>identity_role_map</code>), their personal principal <code>user:&lt;id&gt;</code> (AD <code>objectGUID</code>, OIDC <code>oid</code>/<code>sub</code>), and a clearance level. The role <code>admin</code> sees everything and may manage ACLs.</li>
+<li><b>Labels on knowledge.</b> Every document (source, meeting, synthesis) references an <em>ACL key</em> shared by all documents with the same rules: its own principals (<code>acl_roles</code>), a classification (<code>public &lt; internal &lt; confidential &lt; restricted</code>), clauses read from the source system, and — for syntheses — the documents it derives from. Chunks inherit the key of their document, so filtering is done once per key, not per chunk.</li>
+<li><b>Collections and gate.</b> A <em>collection</em> gives principals and a classification to whole sources (an import branch or a folder) in one place, stored in the versioned <code>acl.json</code>. The project <em>gate</em> decides who may see the project at all; a hidden project answers <code>404</code>, not <code>403</code>.</li>
+<li><b>Rules.</b> Clauses are combined with AND, principals inside a clause with OR. A document without any label is visible <strong>only to admins</strong> (default-deny) once <code>acl enforce on</code> is set for the project; enforcement is off by default so an existing installation behaves exactly as before until you opt in.</li>
+<li><b>Everything is filtered.</b> Search, <code>/wiki/tree</code>, <code>/wiki/page</code>, the graph, <code>index.md</code> (generated per user), the project list, history and <code>POST /rag/context</code> — the endpoint LLM clients use to get context — all apply the same check.</li>
+</ul>
+
+<h2 id="p9-idp">9.2&ensp;Choosing an identity provider</h2>
+<table>
+<tr><th>Provider</th><th>Login, roles, revocation</th></tr>
+<tr><td><code>ldap</code></td><td>Username + password, once per session. Roles from group membership (nested groups included). Revocation: directory change detection; disabled accounts end their sessions.</td></tr>
+<tr><td><code>oidc</code></td><td>Browser SSO (Entra ID, Okta, Keycloak, Google). Roles from the groups/app-roles claim, re-read with the refresh token at every cache expiry; an IdP refusal ends the session.</td></tr>
+<tr><td><code>saml</code>, roles from <code>ldap</code></td><td>Browser SSO (AD FS, Entra ID, Okta, Shibboleth); roles and revocation exactly as with <code>ldap</code>. Recommended SAML setup.</td></tr>
+<tr><td><code>saml</code>, roles from the <code>assertion</code></td><td>Browser SSO; roles from the assertion's groups attribute, fixed until the session expires (<code>session_max_hours</code>): SAML has no refresh.</td></tr>
+</table>
+<pre>{
+  "identity_provider": "ldap",
+  "ldap_url": "ldaps://dc.corp.local",
+  "ldap_base_dn": "dc=corp,dc=local",
+  "ldap_bind_dn": "cn=svc-wikibridge,ou=service,dc=corp,dc=local",
+  "ldap_bind_password": "env:WB_LDAP_PASSWORD",
+  "identity_role_map": {
+    "cn=Legal,ou=Groups,dc=corp,dc=local": "team-legal",
+    "cn=WB-Admins,ou=Groups,dc=corp,dc=local": "admin"
+  },
+  "api_auth_token": "env:WB_APP_KEY",
+  "cors_origins": ["http://tauri.localhost"]
+}</pre>
+<p>OIDC needs <code>oidc_issuer</code>, <code>oidc_client_id</code> and usually <code>oidc_groups_claim: "roles"</code>, <code>oidc_user_id_claim: "oid"</code>. SAML needs <code>pip install "wikibridge[saml]"</code> and either <code>saml_idp_metadata</code> (https URL or file) or <code>saml_idp_entity_id</code> + <code>saml_idp_sso_url</code> + <code>saml_idp_cert</code>; register the metadata served at <code>GET /identity/saml/metadata</code> in the IdP. SAML verifies the assertion signature (SHA-1 rejected), recipient, audience, validity window and <code>InResponseTo</code> against a single-use request; IdP-initiated logins, encrypted assertions and Single Logout are not supported.</p>
+<div class="warnbox"><b>Security</b> — with an identity provider and a non-loopback <code>api_host</code> the server refuses to start without TLS (<code>api_tls_cert</code>/<code>api_tls_key</code> or <code>behind_tls_proxy: true</code>). LDAP over plain <code>ldap://</code> is refused unless StartTLS is on. Anyone who can read <code>data/</code> on disk bypasses every ACL: the server warns at startup if the folder is readable by broad groups (<code>GET /identity/status</code> → <code>deployment_warnings</code>).</div>
+
+<h2 id="p9-session">9.3&ensp;Sessions, the application key, real-time changes</h2>
+<ul>
+<li>Two separate headers: <code>X-Wikibridge-Key</code> identifies the <em>client application</em> (<code>api_auth_token</code>); <code>Authorization: Bearer &lt;session&gt;</code> identifies the <em>user</em>. A session comes from <code>POST /identity/login</code> (LDAP) or from the SSO flow (<code>/identity/oidc/login</code>, <code>/identity/saml/login</code> with a <code>return_to</code> on loopback or in <code>oidc_return_urls</code>/<code>saml_return_urls</code>).</li>
+<li>Sessions are opaque, kept hashed in memory, and expire after <code>session_idle_min</code> (30) of inactivity or <code>session_max_hours</code> (8). Failed logins are throttled per user and per IP (<code>login_max_failures_user</code> 5 — keep it below the AD lockout threshold).</li>
+<li>Roles are cached for <code>entitlement_cache_ttl_s</code> (300&nbsp;s), so searches never wait for the directory. To apply a change sooner: the user calls <code>POST /identity/refresh</code>; an admin calls <code>POST /identity/sync-groups</code> (detects directory changes and clears the cache) or <code>POST /identity/invalidate</code>; or set <code>ldap_change_poll_s</code> to let the server check by itself.</li>
+<li>A directory that cannot be reached yields <code>503</code> (nobody is logged out); an account removed or disabled yields <code>401</code> and all its sessions are revoked.</li>
+</ul>
+
+<h2 id="p9-label">9.4&ensp;Labelling knowledge</h2>
+<pre># who may see the project at all (empty = everyone signed in)
+wikibridge acl gate --role dipendenti --yes
+
+# a whole import branch or folder, in one place
+wikibridge acl collection legal-space --source imp-0003 \
+    --role team-legal --classification confidential
+
+# one document, including single persons
+wikibridge acl page sources/contratto-acme.md --role team-legal --user mario.rossi
+
+# review, then switch filtering on
+wikibridge acl show
+wikibridge acl enforce on</pre>
+<p>Changes that <em>widen</em> access are previewed and require <code>--yes</code> on the CLI or <code>confirm: true</code> over HTTP (every ACL endpoint also accepts <code>dry_run</code>). Widening means: new principals; a lower classification; sources removed from a collection; deleting a collection or emptying the gate; removing all of a document's own principals (the collection alone then decides); and <strong>turning the filter off</strong> (<code>acl enforce off --yes</code>). Narrowing never asks. Every ACL change, including <code>acl enforce</code>, is written to the audit log. Personal principals are resolved through the directory (<code>--user</code>), never typed as raw ids. Their readable names ("Mario Rossi (mario)") are kept in <code>acl.json</code> under <code>labels</code> for display only; decisions always use <code>user:&lt;id&gt;</code>.</p>
+<p><b>From the GUI.</b> In callAPIcall's <i>Knowledge</i> section an administrator gets a <i>Permissions</i> tab (filter on/off, who can open the project, collections with their sources, roles, people and classification). The Wiki view gains a <i>Document permissions</i> panel: collection and source-read rules are shown read-only, and the document's own rules can be edited. Widening changes show the same preview inline before <i>Confirm and save</i>. Roles are suggested from <code>identity_role_map</code>, <code>source_group_map</code> and the roles already in use (<code>GET /acl</code> → <code>known_roles</code>).</p>
+
+<h2 id="p9-source">9.5&ensp;Permissions read from the source</h2>
+<ul>
+<li><b>Confluence</b> — <code>wikibridge import &lt;url&gt; --permissions</code>: read restrictions of the page and of all its ancestors (they accumulate in Confluence) become AND clauses. Confluence groups map to roles with <code>source_group_map</code> (or <code>source_group_passthrough</code>); users are found in the directory by e-mail/username or through <code>source_user_map</code> (needed on Confluence Cloud, which hides e-mails). Space permissions are not read: model them with a collection.</li>
+<li><b>Windows files (NTFS)</b> — <code>wikibridge ingest &lt;dir&gt; --recursive --permissions</code> (or <code>update --path … --permissions</code>, or <code>"permissions": true</code> for <code>POST /ingest/dir</code> and <code>POST /update</code>): the file's effective DACL, inheritance included, gives the readers. SYSTEM and Administrators are ignored; <i>Everyone</i>, <i>Authenticated Users</i> and <i>Users</i> must be mapped explicitly in <code>source_group_map</code>. Deny entries cannot be represented and make the file admin-only. Requires <code>pywin32</code>.</li>
+<li><b>Fail-closed</b> — unreadable permissions, unmapped groups and unknown users make the document admin-only (principal <code>acl:nessuno</code>) and are listed in the report (<code>acl_unreadable</code>, <code>acl_unmapped</code>). Every <code>update</code> re-reads permissions even when the content did not change.</li>
+</ul>
+
+<h2 id="p9-update">9.6&ensp;Updates, chunks and version history</h2>
+<pre>wikibridge sources                         # updatable sources: wiki branches, folders, files
+wikibridge update                          # check every source of the project
+wikibridge update --import imp-0003 --path "D:\specs\msa.pdf"
+wikibridge update --all-projects           # for a scheduled task / cron
+wikibridge history sources/msa.md          # versions of a document
+wikibridge history sources/msa.md --at 2026-09-01T10:00</pre>
+<ul>
+<li>Nothing runs by itself: updates start only when called (CLI, <code>POST /update</code>, an agent or a scheduler). Change feeds (Confluence CQL, MediaWiki RecentChanges) limit the work to what changed.</li>
+<li>Pages keep a stable <code>doc_id</code>, so an update rewrites the same page instead of creating a duplicate, even after a rename. Documents are indexed as <em>chunks</em> per heading section; only changed chunks are re-indexed and get a new version.</li>
+<li>Superseded chunk versions are kept for <code>history_retention_days</code> (365) and can reconstruct a document at a past date — visible only to users who may see the document <em>today</em>.</li>
+</ul>
+
+<h2 id="p9-derived">9.7&ensp;Syntheses, meetings and RAG context</h2>
+<ul>
+<li><b>Syntheses</b> (<code>POST /syntheses</code>, <code>wikibridge synthesis</code>) declare their source documents and are visible only to users who can see <strong>all</strong> of them, re-evaluated at every request.</li>
+<li><b>Meetings</b> saved by a non-admin (<code>POST /meetings</code>) are visible to the saver and to the recognised participants.</li>
+<li><b>RAG context</b> — <code>POST /rag/context {project, query, participants?, unresolved?}</code> returns the relevant chunks the caller may see. With <code>participants</code> it returns only what <em>every</em> participant may see (for live meetings); unrecognised participants restrict the context to <code>public</code> content, or are ignored with <code>unresolved: "ignore"</code>.</li>
+</ul>
+
+<h2 id="p9-audit">9.8&ensp;Audit log</h2>
+<pre>wikibridge audit --path sources/contratto-acme.md    # who viewed this document
+wikibridge audit --user mario --since 2026-09-01
+wikibridge audit --verify                            # hash-chain integrity</pre>
+<p>Logins, failed logins, document views, searches and every change are appended to monthly JSONL files in <code>audit_dir</code> (default <code>data/audit/</code>), chained by hash so that edits or deletions are detectable. Query text is stored as a keyed hash by default (<code>audit_query_mode</code>: <code>hash|full|none</code>); files older than <code>audit_retention_months</code> (12) are removed. Only admins can read it (<code>GET /audit</code>, <code>GET /audit/verify</code>).</p>
+
+<h2 id="p9-api">9.9&ensp;HTTP endpoints added for multi-user mode</h2>
+<table>
+<tr><th>Endpoint</th><th>Purpose</th></tr>
+<tr><td><span class="tag post">POST</span> /identity/login · /identity/logout</td><td>password login (LDAP); end the session</td></tr>
+<tr><td><span class="tag get">GET</span> /identity/oidc/login · /identity/oidc/callback, <span class="tag post">POST</span> /identity/oidc/token</td><td>OIDC browser flow; exchange of an existing id_token</td></tr>
+<tr><td><span class="tag get">GET</span> /identity/saml/login · /identity/saml/metadata, <span class="tag post">POST</span> /identity/saml/acs</td><td>SAML browser flow and SP metadata</td></tr>
+<tr><td><span class="tag get">GET</span> /identity/whoami · /identity/status</td><td>current user, roles, clearance; server status incl. <code>deployment_warnings</code></td></tr>
+<tr><td><span class="tag post">POST</span> /identity/refresh · /identity/invalidate · /identity/sync-groups</td><td>apply permission changes before the cache expires</td></tr>
+<tr><td><span class="tag get">GET</span> /acl, <span class="tag post">PUT</span> /acl/page · /acl/gate · /acl/collections/&lt;id&gt;, <span class="tag del">DELETE</span> /acl/collections/&lt;id&gt;, <span class="tag post">POST</span> /projects/&lt;slug&gt;/acl</td><td>ACL management and filter on/off (admin; <code>dry_run</code>; <code>confirm</code> when widening, 409 with the preview otherwise)</td></tr>
+<tr><td><span class="tag post">POST</span> /rag/context · /syntheses · /update, <span class="tag get">GET</span> /sources · /history · /history/document</td><td>filtered context, syntheses, updates, version history</td></tr>
+<tr><td><span class="tag get">GET</span> /audit · /audit/verify</td><td>audit log (admin)</td></tr>
+</table>
+<p><code>GET /health</code> is always public and tells clients whether the server is multi-user (<code>multi_user</code>), how to sign in (<code>login: "password"|"sso"</code>) and, for SSO, where (<code>sso_login</code>).</p>
+
+<h2 id="p9-callapicall">9.10&ensp;callAPIcall integration</h2>
+<ul>
+<li>With <code>knowledge_access: "auto"</code>, callAPIcall detects multi-user mode and stops giving the LLM a path to the wiki on disk: the copilot and the meeting summaries receive only the filtered chunks from <code>/rag/context</code>. If WikiBridge is unreachable the assistant gets no knowledge at all (fail-closed), never a fallback to the files.</li>
+<li>The Control Center's <i>Knowledge</i> section shows a sign-in panel (username/password, or "Sign in with your work account" for OIDC/SAML) and, once signed in, a “Viewing knowledge as …” bar with name, clearance and roles. The session is one per app and shared with the assistant, so what the operator sees and what the LLM receives go through the same filter.</li>
+<li>Administrators manage permissions from the same section (§9.4, <i>From the GUI</i>); other users never see those controls.</li>
+<li>Add the webview origin (<code>http://tauri.localhost</code> on Windows) to <code>cors_origins</code>; otherwise the GUI reports that WikiBridge refuses its requests.</li>
 </ul>
 </div>
 

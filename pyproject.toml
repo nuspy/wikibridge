@@ -20,11 +20,14 @@ dependencies = [
     "pyyaml>=6.0",
     "browser-cookie3>=0.19",
     "ldap3>=2.9",
+    "PyJWT[crypto]>=2.8",
+    "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 server = ["waitress>=3.0"]
+saml = ["python3-saml>=1.16"]   # identity_provider=saml (xmlsec nativo: wheel per Windows/Linux)
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

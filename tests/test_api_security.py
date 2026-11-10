@@ -19,7 +19,8 @@ def login(client, user, pw, **headers):
 
 def test_requests_without_session_are_refused(client):
     assert client.get("/search?q=x").status_code == 401
-    assert client.get("/health").get_json() == {"ok": True}
+    assert client.get("/health").get_json() == {"ok": True, "multi_user": True,
+                                                "login": "password"}
 
 
 def test_login_logout_and_whoami(client):

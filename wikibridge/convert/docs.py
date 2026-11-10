@@ -40,15 +40,17 @@ def convert_document(path: Path) -> str:
 
 def ingest_path(cfg: Config, project: Project, path: Path, *,
                 recursive: bool = False, catalog=None,
-                progress=None) -> dict:
+                progress=None, permissions: bool = False) -> dict:
     """Importa un file o una directory e la registra come sorgente
     aggiornabile (ingests.json): reingerire lo stesso percorso aggiorna
-    le pagine esistenti invece di duplicarle. Ritorna il riepilogo."""
+    le pagine esistenti invece di duplicarle. permissions: legge anche i
+    permessi NTFS dei file (ntfs_acl.py). Ritorna il riepilogo."""
     from ..updater import update_files_source, register_paths
 
     if not path.exists():
         raise FileNotFoundError(str(path))
-    targets, errors = register_paths(project, [str(path)], recursive=recursive)
+    targets, errors = register_paths(project, [str(path)], recursive=recursive,
+                                     permissions=permissions)
     checked = imported = 0
     for source_id, keys in targets:
         r = update_files_source(cfg, project, source_id, only_keys=keys,
@@ -79,7 +81,8 @@ def ingest_cli(cfg: Config, store: ProjectStore, args) -> int:
 
     result = ingest_path(cfg, project, Path(args.path),
                          recursive=args.recursive, catalog=catalog,
-                         progress=progress)
+                         progress=progress,
+                         permissions=getattr(args, "permissions", False))
     print()
     print(json.dumps(result, ensure_ascii=False, indent=1))
     return 0 if not result["errors"] else 1

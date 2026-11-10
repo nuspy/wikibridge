@@ -14,7 +14,10 @@ import logging
 import re
 from urllib.parse import urlparse
 
-from .base import PageContent, PageRef, SourceAdapter
+import requests
+
+from .base import AclUnreadable, PageContent, PageRef, SourceAdapter
+from ..auth import AuthRequiredError
 from ..convert.html_md import html_to_markdown
 
 log = logging.getLogger("wikibridge.confluence")
@@ -23,6 +26,7 @@ log = logging.getLogger("wikibridge.confluence")
 _PAGEID_RE = re.compile(r"/pages/(\d+)")
 _VIEWPAGE_RE = re.compile(r"pageId=(\d+)")
 _SPACE_RE = re.compile(r"/spaces/([^/]+)")
+FEED_MARGIN_H = 24
 
 
 class ConfluenceAdapter(SourceAdapter):
@@ -33,6 +37,7 @@ class ConfluenceAdapter(SourceAdapter):
         super().__init__(session, limits)
         self._rest = ""      # https://host(/wiki)/rest/api
         self._base = ""
+        self._restrictions: dict[str, dict | None] = {}
 
     @classmethod
     def detect(cls, url: str, session) -> bool:
@@ -112,6 +117,12 @@ class ConfluenceAdapter(SourceAdapter):
         seed = self._get(f"/content/{cid}")
         refs = [self._page_ref(seed)]
         if scope == "subtree":
+            # CQL: tutto il ramo in ~1 chiamata ogni 100 pagine invece di una
+            # chiamata "figli" per ogni pagina; ripiego sulla visita se la
+            # ricerca non è disponibile
+            listed = self._cql_refs(f"type=page and ancestor={cid}")
+            if listed is not None:
+                return (refs + listed)[: self.limits.max_pages]
             stack = [cid]
             while stack and len(refs) < self.limits.max_pages:
                 parent = stack.pop()
@@ -144,6 +155,101 @@ class ConfluenceAdapter(SourceAdapter):
         links = [self._page_ref(c, depth=ref.depth + 1) for c in children]
         return PageContent(ref=ref, markdown=md, links=links,
                            revision=str(data.get("version", {}).get("number", "")))
+
+    # -- ricerca CQL (elenchi e change feed) ---------------------------------------
+
+    def _cql_refs(self, cql: str) -> list[PageRef] | None:
+        """Risultati di una ricerca CQL (paginata); None se la ricerca non è
+        disponibile o fallisce."""
+        refs: list[PageRef] = []
+        start = 0
+        try:
+            while len(refs) < self.limits.max_pages:
+                data = self._get("/content/search", cql=cql, limit=100, start=start)
+                results = data.get("results", [])
+                refs += [self._page_ref(c) for c in results]
+                if len(results) < 100:
+                    return refs
+                start += len(results)
+        except (requests.RequestException, AuthRequiredError, ValueError) as e:
+            log.info("ricerca CQL non disponibile (%s): ripiego", e)
+            return None
+        return refs
+
+    def changed_ids_since(self, url: str, scope: str, since: str) -> set[str] | None:
+        """Pagine del ramo modificate dopo `since`. In CQL lastmodified è
+        interpretato nel fuso dell'utente Confluence: margine di 24 ore (le
+        pagine in più passano comunque dal controllo di revisione)."""
+        from datetime import datetime, timedelta
+        try:
+            stamp = (datetime.fromisoformat(since) - timedelta(hours=FEED_MARGIN_H)
+                     ).strftime("%Y-%m-%d %H:%M")
+            self._ensure_rest(url)
+            if scope == "space":
+                m = _SPACE_RE.search(url)
+                if not m:
+                    return None
+                where = f'space="{m.group(1)}"'
+            elif scope == "subtree":
+                cid = self._content_id_from_url(url)
+                where = f"(ancestor={cid} or id={cid})"
+            else:
+                return None
+        except (ValueError, RuntimeError, requests.RequestException):
+            return None
+        refs = self._cql_refs(f'type=page and {where} and lastmodified >= "{stamp}"')
+        return None if refs is None else {r.id for r in refs}
+
+    def still_in_branch(self, ref: PageRef, url: str, scope: str) -> bool | None:
+        cid = ref.id or self._content_id_from_url(ref.url)
+        try:
+            data = self._get(f"/content/{cid}", expand="ancestors,space")
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                return False                              # cancellata davvero
+            return None
+        except (requests.RequestException, AuthRequiredError):
+            return None
+        if scope == "space":
+            m = _SPACE_RE.search(url)
+            return bool(m) and data.get("space", {}).get("key") == m.group(1)
+        root = self._content_id_from_url(url)
+        return cid == root or root in {str(a["id"]) for a in data.get("ancestors", [])}
+
+    def _node_restriction(self, cid: str) -> dict | None:
+        """Restrizione di lettura impostata SU questa pagina (None se non ne
+        ha). In cache: le pagine sorelle condividono gli stessi antenati."""
+        if cid in self._restrictions:
+            return self._restrictions[cid]
+        try:
+            data = self._get(f"/content/{cid}/restriction/byOperation/read",
+                             expand="restrictions.user,restrictions.group")
+        except (requests.RequestException, AuthRequiredError) as e:
+            raise AclUnreadable(f"restrizioni di {cid} non leggibili: {e}") from e
+        r = data.get("restrictions", {})
+        users = [{k: u[k] for k in ("accountId", "username", "email") if u.get(k)}
+                 for u in r.get("user", {}).get("results", [])]
+        groups = [g.get("name") for g in r.get("group", {}).get("results", [])
+                  if g.get("name")]
+        clause = {"groups": groups, "users": users} if (users or groups) else None
+        self._restrictions[cid] = clause
+        return clause
+
+    def fetch_acl(self, ref: PageRef) -> list[dict] | None:
+        """In Confluence una restrizione di lettura vale per la pagina e per
+        tutti i discendenti, e più restrizioni si sommano (intersezione):
+        una clausola per ogni pagina ristretta tra la pagina e i suoi
+        antenati. I permessi di spazio non vengono letti (su Cloud servono
+        diritti di amministratore): si modellano con una collezione."""
+        if not self._rest:
+            self._ensure_rest(ref.url)
+        cid = ref.id or self._content_id_from_url(ref.url)
+        try:
+            data = self._get(f"/content/{cid}", expand="ancestors")
+        except (requests.RequestException, AuthRequiredError) as e:
+            raise AclUnreadable(f"antenati di {cid} non leggibili: {e}") from e
+        chain = [str(a["id"]) for a in data.get("ancestors", [])] + [str(cid)]
+        return [c for c in (self._node_restriction(x) for x in chain) if c]
 
     def changed_since(self, ref: PageRef, revision: str | None) -> bool:
         if not revision:

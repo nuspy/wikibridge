@@ -10,3 +10,7 @@ pyyaml>=6.0
 browser-cookie3>=0.19   # cattura cookie SSO dal browser (auth login, tipo cookie)
 ldap3>=2.9               # identity provider LDAP/Active Directory (identity.py)
 waitress>=3.0            # server WSGI di produzione per `wikibridge serve`
+PyJWT[crypto]>=2.8       # identity provider OIDC: validazione id_token (JWKS)
+pywin32>=306; sys_platform == "win32"   # permessi NTFS dei file (ingest --permissions)
+# solo con identity_provider=saml (porta xmlsec, libreria nativa):
+# python3-saml>=1.16

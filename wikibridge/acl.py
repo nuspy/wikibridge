@@ -50,9 +50,32 @@ def user_clearance(principals: frozenset[str], default: str) -> int:
     return max([level(default), *levels])
 
 
-def acl_key(source_id: str, own: list[str] | None, classification: str | None) -> str:
-    return json.dumps([source_id or "", sorted(set(own or [])),
-                       classification or "internal"])
+# principal che nessuno possiede: una clausola che lo contiene da solo non è
+# soddisfacibile (permessi della fonte non leggibili o non traducibili)
+NOBODY = "acl:nessuno"
+
+
+def acl_key(source_id: str, own: list[str] | None, classification: str | None,
+            source_clauses: list[list[str]] | None = None,
+            derived_from: list[str] | None = None) -> str:
+    """Chiave condivisa da tutti i blocchi con le stesse autorizzazioni.
+    source_clauses: restrizioni lette dalla fonte (una clausola per ogni
+    pagina o antenato ristretto), in AND con tutto il resto.
+    derived_from: per le sintesi, i documenti da cui derivano: visibile solo
+    a chi li vede TUTTI (valutato per riferimento, a ogni richiesta)."""
+    key = [source_id or "", sorted(set(own or [])), classification or "internal"]
+    clauses = sorted(sorted(set(c)) for c in (source_clauses or []))
+    derived = sorted(set(derived_from or []))
+    if clauses or derived:
+        key.append(clauses)
+    if derived:
+        key.append(derived)
+    return json.dumps(key)
+
+
+def derived_of(key: str) -> list[str]:
+    parts = json.loads(key)
+    return parts[4] if len(parts) > 4 else []
 
 
 @dataclass
@@ -61,6 +84,9 @@ class AclPolicy:
     version: int = 0
     gate: list[str] = field(default_factory=list)          # vuoto = nessun gate
     collections: dict[str, dict] = field(default_factory=dict)
+    # "user:<guid>" -> "Mario Rossi (mario)": solo per mostrare i permessi a
+    # persona singola in modo leggibile; non entra mai nelle decisioni
+    labels: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def load(cls, project: Project) -> "AclPolicy":
@@ -70,14 +96,16 @@ class AclPolicy:
         data = json.loads(path.read_text(encoding="utf-8"))
         return cls(path=path, version=int(data.get("version", 0)),
                    gate=list(data.get("gate", [])),
-                   collections=dict(data.get("collections", {})))
+                   collections=dict(data.get("collections", {})),
+                   labels=dict(data.get("labels", {})))
 
     def save(self) -> None:
         self.version += 1
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps({"version": self.version, "gate": self.gate,
-                                   "collections": self.collections},
+                                   "collections": self.collections,
+                                   "labels": self.labels},
                                   ensure_ascii=False, indent=1), encoding="utf-8")
         tmp.replace(self.path)
 
@@ -105,7 +133,9 @@ class AclPolicy:
 
     def key_visible(self, key: str, principals: frozenset[str],
                     clearance: int) -> bool:
-        source_id, own, classification = json.loads(key)
+        source_id, own, classification, *rest = json.loads(key)
+        source_clauses = rest[0] if rest else []
+        derived = rest[1] if len(rest) > 1 else []
         coll = self.collection_of(source_id)
         lvl = level(classification)
         if coll:
@@ -117,8 +147,11 @@ class AclPolicy:
             clauses.append(set(coll["principals"]))
         if own:
             clauses.append(set(own))
+        clauses += [set(c) for c in source_clauses]
         if not clauses:
-            return classification == "public"
+            # una sintesi non ha bisogno di clausole proprie: la limitano le
+            # sue fonti (controllate a parte, vedi Access.acl_ids)
+            return classification == "public" or bool(derived)
         return all(c & principals for c in clauses)
 
 
@@ -156,15 +189,27 @@ class Access:
             return frozenset()
         clearance = user_clearance(self.principals, self.default_clearance)
         sets = index.acl_sets()
+        # docs_version: le sintesi dipendono dalle ACL dei documenti da cui
+        # derivano, che possono cambiare senza creare nuove chiavi
         ck = (str(index.db_path), self.policy.version, len(sets),
-              self.principals, clearance)
+              index.docs_version(), self.principals, clearance)
         with _CACHE_LOCK:
             hit = _CACHE.get(ck)
             if hit is not None:
                 _CACHE.move_to_end(ck)
                 return hit
-        visible = frozenset(i for i, key in sets
-                            if self.policy.key_visible(key, self.principals, clearance))
+        own_ok = {i: key for i, key in sets
+                  if self.policy.key_visible(key, self.principals, clearance)}
+        visible = {i for i, key in own_ok.items() if not derived_of(key)}
+        # seconda passata: una sintesi è visibile solo se lo sono tutte le
+        # sue fonti (una fonte cancellata o sconosciuta la nasconde)
+        for i, key in own_ok.items():
+            sources = derived_of(key)
+            if sources:
+                acl = index.doc_acl(sources)
+                if all(acl.get(s) in visible for s in sources):
+                    visible.add(i)
+        visible = frozenset(visible)
         with _CACHE_LOCK:
             _CACHE[ck] = visible
             while len(_CACHE) > _CACHE_MAX:
